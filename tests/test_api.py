@@ -4,7 +4,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from autovc.database import Base
-import autovc.models  # noqa: F401 — register tables with Base
 from autovc.main import create_app
 from autovc.api.routes import get_db
 
@@ -25,7 +24,7 @@ def client():
         finally:
             db.close()
 
-    app = create_app(session_factory=TestSession)
+    app = create_app()
     app.dependency_overrides[get_db] = override_get_db
     return TestClient(app)
 
