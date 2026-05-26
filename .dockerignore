@@ -1,0 +1,13 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.db
+.env
+.git
+.pytest_cache
+*.egg-info
+docs/
+tests/
+kim.log
+kim-tools.log
