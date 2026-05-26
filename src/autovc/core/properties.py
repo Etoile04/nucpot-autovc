@@ -22,7 +22,7 @@ _PROPERTY_DEFS: dict[str, dict[str, str]] = {
     "lattice_constant": {"unit": "angstrom", "description": "Equilibrium lattice constant"},
     "cohesive_energy": {"unit": "eV/atom", "description": "Cohesive energy per atom"},
     "elastic_constants": {"unit": "GPa", "description": "Elastic constants C11/C12/C44"},
-    "bulk_modulus": {"unit": "GPa", "description": "Bulk modulus from EV curve"},
+    "bulk_modulus": {"unit": "GPa", "description": "Bulk modulus from EV curve or elastic constants"},
     "vacancy_formation_energy": {"unit": "eV", "description": "Monovacancy formation energy"},
 }
 
@@ -62,31 +62,23 @@ class PropertyCalculator:
         return atoms
 
     def _extract_lattice_constant(self, atoms, structure: str) -> float:
-        """Extract conventional cubic lattice constant from relaxed cell.
-
-        ASE bulk() returns primitive cells:
-        - BCC: 1 atom, cell vectors = a/2 * [[-1,1,1],[1,-1,1],[1,1,-1]]
-        - FCC: 1 atom, cell vectors = a/2 * [[0,1,1],[1,0,1],[1,1,0]]
-        So |cell[0]| = a*sqrt(3)/2 for BCC and a*sqrt(2)/2 for FCC.
-        We recover a from the volume: V = a^3/n_atoms_per_conventional_cell / scaling.
-        Simpler: use cell volume and number of atoms.
-        """
+        """Extract conventional cubic lattice constant from relaxed cell."""
         cell = atoms.get_cell()
         vol = atoms.get_volume()
         n = len(atoms)
-
-        # For cubic systems: conventional cell volume = a^3
-        # Primitive cell contains fewer atoms:
-        # BCC primitive: 1 atom, conventional: 2 atoms → V_prim = a^3/2
-        # FCC primitive: 1 atom, conventional: 4 atoms → V_prim = a^3/4
-        # SC primitive: 1 atom, conventional: 1 atom → V_prim = a^3
         atoms_per_conventional = {"bcc": 2, "fcc": 4, "sc": 1, "diamond": 8}
         n_conv = atoms_per_conventional.get(structure.lower(), n)
-
-        # conventional volume = vol * n_conv / n
         v_conv = vol * n_conv / n
         a = v_conv ** (1.0 / 3.0)
         return float(a)
+
+    def _get_calculator(self, calculator=None, kim_model=None, species="U"):
+        """Resolve calculator, raising if none available."""
+        if calculator is not None:
+            return calculator
+        from autovc.core.calculator import KimCalculator
+        kc = KimCalculator(kim_model=kim_model or species)
+        return kc._get_calculator()
 
     def compute_lattice_constant(
         self,
@@ -98,16 +90,8 @@ class PropertyCalculator:
     ) -> dict[str, Any]:
         """Compute equilibrium lattice constant."""
         guess = lattice_guess or 3.4
-
-        if calculator is None:
-            from autovc.core.calculator import KimCalculator
-            try:
-                kc = KimCalculator(kim_model=kim_model or species)
-                calculator = kc._get_calculator()
-            except Exception:
-                raise RuntimeError("No calculator available. Install kimpy or pass an ASE calculator.")
-
-        atoms = self._get_relaxed_atoms(calculator, species, structure, guess)
+        calc = self._get_calculator(calculator, kim_model, species)
+        atoms = self._get_relaxed_atoms(calc, species, structure, guess)
         a = self._extract_lattice_constant(atoms, structure)
         return {"value": a, "unit": "angstrom", "property": "lattice_constant"}
 
@@ -122,21 +106,15 @@ class PropertyCalculator:
         """Compute cohesive energy = E_isolated_atom - E_bulk/N."""
         from ase import Atoms
         guess = lattice_guess or 3.4
+        calc = self._get_calculator(calculator, kim_model, species)
 
-        if calculator is None:
-            from autovc.core.calculator import KimCalculator
-            kc = KimCalculator(kim_model=kim_model or species)
-            calculator = kc._get_calculator()
-
-        # Bulk energy
         atoms_bulk = bulk(species, structure.lower(), a=guess)
-        atoms_bulk.calc = calculator
+        atoms_bulk.calc = calc
         e_bulk = atoms_bulk.get_potential_energy()
         n_atoms = len(atoms_bulk)
 
-        # Isolated atom
         atom_single = Atoms(species, positions=[[0, 0, 0]], cell=[20, 20, 20], pbc=False)
-        atom_single.calc = calculator
+        atom_single.calc = calc
         e_atom = atom_single.get_potential_energy()
 
         cohesive_e = (e_atom - e_bulk) / n_atoms
@@ -152,16 +130,11 @@ class PropertyCalculator:
     ) -> dict[str, Any]:
         """Compute elastic constants using finite strain method."""
         guess = lattice_guess or 3.4
-
-        if calculator is None:
-            from autovc.core.calculator import KimCalculator
-            kc = KimCalculator(kim_model=kim_model or species)
-            calculator = kc._get_calculator()
+        calc = self._get_calculator(calculator, kim_model, species)
 
         atoms = bulk(species, structure.lower(), a=guess)
-        atoms.calc = calculator
+        atoms.calc = calculator if calculator else calc
 
-        # Simple bulk modulus via volume strain
         v0 = atoms.get_volume()
         e0 = atoms.get_potential_energy()
 
@@ -172,15 +145,12 @@ class PropertyCalculator:
             strain_matrix = np.eye(3) * (1 + eps)
             strained = atoms.copy()
             strained.set_cell(strained.get_cell() @ strain_matrix, scale_atoms=True)
-            strained.calc = calculator
+            strained.calc = calc
             volumes.append(strained.get_volume())
             energies.append(strained.get_potential_energy())
 
-        # Fit Birch-Murnaghan EOS for bulk modulus
         volumes = np.array(volumes)
         energies = np.array(energies)
-        # B = V * d2E/dV2
-        # Simple parabolic fit
         coeffs = np.polyfit(volumes, energies, 2)
         B = 2 * coeffs[0] * v0  # eV/A^3
         B_GPa = B * 160.2176634  # convert eV/A^3 to GPa
@@ -198,14 +168,29 @@ class PropertyCalculator:
         species: str = "U",
         structure: str = "BCC",
         lattice_guess: float | None = None,
+        method: str = "ev_curve",
+        elastic_result: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Compute bulk modulus from energy-volume curve."""
+        """Compute bulk modulus.
+
+        Two methods:
+        1. 'ev_curve': Fit energy-volume curve (default)
+        2. 'elastic': Derive from elastic constants B = (C11 + 2*C12) / 3
+        """
+        if method == "elastic" and elastic_result is not None:
+            c11 = elastic_result.get("C11")
+            c12 = elastic_result.get("C12")
+            if c11 is not None and c12 is not None:
+                B = (c11 + 2 * c12) / 3.0
+                return {"value": round(B, 2), "unit": "GPa", "property": "bulk_modulus", "method": "elastic_constants"}
+
+        # Fallback: EV curve fitting
         result = self.compute_elastic_constants(
             calculator=calculator, kim_model=kim_model,
             species=species, structure=structure, lattice_guess=lattice_guess,
         )
         bm = result["value"].get("bulk_modulus")
-        return {"value": bm, "unit": "GPa", "property": "bulk_modulus"}
+        return {"value": bm, "unit": "GPa", "property": "bulk_modulus", "method": "ev_curve"}
 
     def compute_vacancy_formation_energy(
         self,
@@ -214,33 +199,41 @@ class PropertyCalculator:
         species: str = "U",
         structure: str = "BCC",
         lattice_guess: float | None = None,
+        supercell_size: int = 3,
     ) -> dict[str, Any]:
-        """Compute monovacancy formation energy."""
+        """Compute monovacancy formation energy.
+
+        Uses a supercell for better accuracy:
+        Evf = E(N-1) - (N-1)/N * E(N)
+
+        Args:
+            supercell_size: Size of supercell (default 3 = 3x3x3).
+                           Larger = more accurate but slower.
+        """
+        from ase import Atoms
         guess = lattice_guess or 3.4
+        calc = self._get_calculator(calculator, kim_model, species)
 
-        if calculator is None:
-            from autovc.core.calculator import KimCalculator
-            kc = KimCalculator(kim_model=kim_model or species)
-            calculator = kc._get_calculator()
-
-        # Perfect crystal
-        atoms_perfect = bulk(species, structure.lower(), a=guess)
-        atoms_perfect.calc = calculator
-        e_perfect = atoms_perfect.get_potential_energy()
+        # Build supercell for better vacancy convergence
+        atoms_prim = bulk(species, structure.lower(), a=guess)
+        atoms_perfect = atoms_prim * (supercell_size, supercell_size, supercell_size)
         n = len(atoms_perfect)
 
-        # Crystal with vacancy: remove one atom
+        atoms_perfect.calc = calc
+        e_perfect = atoms_perfect.get_potential_energy()
+
+        # Remove one atom to create vacancy
         atoms_vac = atoms_perfect.copy()
-        atoms_vac.pop()
-        atoms_vac.calc = calculator
+        atoms_vac.pop(0)
+        atoms_vac.calc = calc
         e_vac = atoms_vac.get_potential_energy()
 
-        # Cohesive energy for reference
-        from ase import Atoms
-        atom_single = Atoms(species, positions=[[0, 0, 0]], cell=[20, 20, 20], pbc=False)
-        atom_single.calc = calculator
-        e_atom = atom_single.get_potential_energy()
-
-        # Evf = E_vac - (N-1)/N * E_perfect
+        # Vacancy formation energy
         e_vf = e_vac - (n - 1) / n * e_perfect
-        return {"value": round(e_vf, 4), "unit": "eV", "property": "vacancy_formation_energy"}
+        return {
+            "value": round(e_vf, 4),
+            "unit": "eV",
+            "property": "vacancy_formation_energy",
+            "supercell_size": f"{supercell_size}x{supercell_size}x{supercell_size}",
+            "n_atoms": n,
+        }
