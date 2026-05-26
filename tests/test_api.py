@@ -4,8 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from autovc.database import Base
+import autovc.models  # noqa: F401 — register tables with Base.metadata
 from autovc.main import create_app
-from autovc.api.routes import get_db
 
 @pytest.fixture
 def client():
@@ -16,16 +16,7 @@ def client():
     )
     Base.metadata.create_all(engine)
     TestSession = sessionmaker(bind=engine)
-
-    def override_get_db():
-        db = TestSession()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app = create_app()
-    app.dependency_overrides[get_db] = override_get_db
+    app = create_app(session_factory=TestSession)
     return TestClient(app)
 
 def test_health(client):

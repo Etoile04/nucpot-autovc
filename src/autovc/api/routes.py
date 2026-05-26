@@ -1,7 +1,7 @@
 import logging
 from typing import Generator
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 from autovc.database import get_session_factory
 from autovc.models import Potential, VerificationJob
 from autovc.schemas import PotentialCreate, PotentialResponse, VerificationJobResponse, VerificationRequest
@@ -9,19 +9,9 @@ from autovc.schemas import PotentialCreate, PotentialResponse, VerificationJobRe
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
-_session_factory: sessionmaker | None = None
-
-
-def _set_session_factory(sf: sessionmaker):
-    global _session_factory
-    _session_factory = sf
-
 
 def get_db():
-    if _session_factory is None:
-        Session = get_session_factory()
-    else:
-        Session = _session_factory
+    Session = get_session_factory()
     db = Session()
     try:
         yield db
