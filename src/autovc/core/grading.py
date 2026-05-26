@@ -1,11 +1,7 @@
 _GRADE_VALUES = {"A": 0, "B": 1, "C": 2, "D": 3, "F": 4}
 
 
-def grade_property(
-    computed: float,
-    reference: float,
-    thresholds: tuple = (0.01, 0.03, 0.05, 0.10),
-) -> str:
+def grade_property(computed: float, reference: float, thresholds: tuple = (0.01, 0.03, 0.05, 0.10)) -> str:
     if reference == 0.0:
         return "A" if computed == 0.0 else "F"
     rel_error = abs(computed - reference) / abs(reference)
