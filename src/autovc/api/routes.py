@@ -9,10 +9,17 @@ from autovc.schemas import PotentialCreate, PotentialResponse, VerificationJobRe
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
+_session_factory = None
+
+
+def _set_session_factory(factory):
+    global _session_factory
+    _session_factory = factory
+
 
 def get_db():
-    Session = get_session_factory()
-    db = Session()
+    factory = _session_factory or get_session_factory()
+    db = factory()
     try:
         yield db
     finally:
