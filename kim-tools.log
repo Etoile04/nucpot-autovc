@@ -1,0 +1,15 @@
+WARNING:autovc.api.routes:Celery dispatch failed: cannot import name 'run_verification' from 'autovc.workers.tasks' (/home/z203/projects/nucpot-autovc/src/autovc/workers/tasks.py)
+INFO:httpx:HTTP Request: POST http://testserver/api/verification "HTTP/1.1 202 Accepted"
+INFO:httpx:HTTP Request: GET http://testserver/api/verification/1 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://testserver/api/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://testserver/api/potentials "HTTP/1.1 201 Created"
+INFO:httpx:HTTP Request: POST http://testserver/api/potentials "HTTP/1.1 201 Created"
+INFO:httpx:HTTP Request: GET http://testserver/api/potentials "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://testserver/api/potentials/999 "HTTP/1.1 404 Not Found"
+INFO:httpx:HTTP Request: POST http://testserver/api/potentials "HTTP/1.1 201 Created"
+WARNING:autovc.api.routes:Celery dispatch failed: cannot import name 'run_verification' from 'autovc.workers.tasks' (/home/z203/projects/nucpot-autovc/src/autovc/workers/tasks.py)
+INFO:httpx:HTTP Request: POST http://testserver/api/verification "HTTP/1.1 202 Accepted"
+INFO:httpx:HTTP Request: POST http://testserver/api/potentials "HTTP/1.1 201 Created"
+WARNING:autovc.api.routes:Celery dispatch failed: cannot import name 'run_verification' from 'autovc.workers.tasks' (/home/z203/projects/nucpot-autovc/src/autovc/workers/tasks.py)
+INFO:httpx:HTTP Request: POST http://testserver/api/verification "HTTP/1.1 202 Accepted"
+INFO:httpx:HTTP Request: GET http://testserver/api/verification/1 "HTTP/1.1 200 OK"
