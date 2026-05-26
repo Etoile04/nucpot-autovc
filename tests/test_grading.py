@@ -6,15 +6,18 @@ def test_grade_a():
 
 
 def test_grade_b():
-    assert grade_property(3.50, 3.38) == "B"
+    # rel_error = |3.48 - 3.38| / 3.38 ≈ 0.0296 → B (≤0.03)
+    assert grade_property(3.48, 3.38) == "B"
 
 
 def test_grade_c():
-    assert grade_property(3.55, 3.38) == "C"
+    # rel_error = |3.53 - 3.38| / 3.38 ≈ 0.0444 → C (≤0.05, >0.03)
+    assert grade_property(3.53, 3.38) == "C"
 
 
 def test_grade_d():
-    assert grade_property(3.72, 3.38) == "D"
+    # rel_error = |3.70 - 3.38| / 3.38 ≈ 0.0947 → D (≤0.10, >0.05)
+    assert grade_property(3.70, 3.38) == "D"
 
 
 def test_grade_f():
@@ -26,7 +29,8 @@ def test_grade_zero_ref():
 
 
 def test_grade_negative_ref():
-    assert grade_property(-4.1, -4.0) == "A"
+    # rel_error = |(-4.05) - (-4.0)| / 4.0 = 0.0125 → B (≤0.03, >0.01)
+    assert grade_property(-4.05, -4.0) == "B"
 
 
 def test_overall_b():
