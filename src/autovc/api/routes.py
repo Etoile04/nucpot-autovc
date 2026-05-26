@@ -2,7 +2,7 @@ import logging
 from typing import Generator
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from autovc.database import get_session_factory
+from autovc.database import get_session_factory as _default_session_factory
 from autovc.models import Potential, VerificationJob
 from autovc.schemas import PotentialCreate, PotentialResponse, VerificationJobResponse, VerificationRequest
 
@@ -17,9 +17,15 @@ def _set_session_factory(factory):
     _session_factory = factory
 
 
+def _get_factory():
+    if _session_factory is not None:
+        return _session_factory
+    return _default_session_factory()
+
+
 def get_db():
-    factory = _session_factory or get_session_factory()
-    db = factory()
+    Session = _get_factory()
+    db = Session()
     try:
         yield db
     finally:
