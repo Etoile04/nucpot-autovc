@@ -1,0 +1,180 @@
+2026-05-27:00:52:21CST * 0 * information * 0x188594b0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:21CST * 1 * information * 0x188594b0 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:21CST * 2 * information * 0x188594b0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:21CST * 0 * information * 0x188594b0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:21CST * 0 * information * 0x18859e00 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:21CST * 1 * information * 0x18859e00 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:21CST * 2 * information * 0x18859e00 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x188594b0_Collections'.
+2026-05-27:00:52:21CST * 3 * information * 0x188594b0_Collections * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x18859e00'.
+2026-05-27:00:52:21CST * 1 * information * 0x188594b0 * KIM_ModelImplementation.cpp:2149 * ModelImplementation object opening model shared library: /home/z203/anaconda3/lib/openkim-models/portable-models/LennardJones_Ar/libkim-api-portable-model.so
+2026-05-27:00:52:21CST * 4 * information * 0x188594b0_Collections * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:21CST * 0 * information * 0x18859e00 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:21CST * 1 * information * 0x18859e00 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x188594b0_0x18859e00'.
+2026-05-27:00:52:21CST * 2 * information * 0x188594b0_0x18859e00 * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x18859e00'.
+2026-05-27:00:52:21CST * 2 * error * 0x188594b0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:21CST * 0 * information * 0x1885b470 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:21CST * 1 * information * 0x1885b470 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:21CST * 2 * information * 0x1885b470 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:21CST * 0 * information * 0x1885b470 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:21CST * 0 * information * 0x1885b3c0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:21CST * 1 * information * 0x1885b3c0 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:21CST * 2 * information * 0x1885b3c0 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x1885b470_Collections'.
+2026-05-27:00:52:21CST * 3 * information * 0x1885b470_Collections * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x1885b3c0'.
+2026-05-27:00:52:21CST * 1 * information * 0x1885b470 * KIM_ModelImplementation.cpp:2149 * ModelImplementation object opening model shared library: /home/z203/anaconda3/lib/openkim-models/portable-models/LennardJones_Ar/libkim-api-portable-model.so
+2026-05-27:00:52:21CST * 4 * information * 0x1885b470_Collections * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:21CST * 0 * information * 0x1885b3c0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:21CST * 1 * information * 0x1885b3c0 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x1885b470_0x1885b3c0'.
+2026-05-27:00:52:21CST * 2 * information * 0x1885b470_0x1885b3c0 * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x1885b3c0'.
+2026-05-27:00:52:21CST * 2 * error * 0x1885b470 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:21CST * 3 * information * 0x188594b0_0x18859e00 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:21CST * 3 * information * 0x188594b0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:21CST * 3 * information * 0x1885b470_0x1885b3c0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:21CST * 3 * information * 0x1885b470 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 0 * information * 0x19c72200 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 1 * information * 0x19c72200 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:22CST * 2 * information * 0x19c72200 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 0 * information * 0x19c72200 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 0 * information * 0x192681e0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 1 * information * 0x192681e0 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:22CST * 2 * information * 0x192681e0 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x19c72200_Collections'.
+2026-05-27:00:52:22CST * 3 * information * 0x19c72200_Collections * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x192681e0'.
+2026-05-27:00:52:22CST * 1 * information * 0x19c72200 * KIM_ModelImplementation.cpp:2149 * ModelImplementation object opening model shared library: /home/z203/anaconda3/lib/openkim-models/portable-models/LennardJones_Ar/libkim-api-portable-model.so
+2026-05-27:00:52:22CST * 4 * information * 0x19c72200_Collections * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 0 * information * 0x192681e0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 1 * information * 0x192681e0 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x19c72200_0x192681e0'.
+2026-05-27:00:52:22CST * 2 * information * 0x19c72200_0x192681e0 * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x192681e0'.
+2026-05-27:00:52:22CST * 2 * error * 0x19c72200 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 0 * information * 0x1915c410 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 1 * information * 0x1915c410 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:22CST * 2 * information * 0x1915c410 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 0 * information * 0x1915c410 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 0 * information * 0x19180880 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 1 * information * 0x19180880 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:22CST * 2 * information * 0x19180880 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x1915c410_Collections'.
+2026-05-27:00:52:22CST * 3 * information * 0x1915c410_Collections * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x19180880'.
+2026-05-27:00:52:22CST * 1 * information * 0x1915c410 * KIM_ModelImplementation.cpp:2149 * ModelImplementation object opening model shared library: /home/z203/anaconda3/lib/openkim-models/portable-models/LennardJones_Ar/libkim-api-portable-model.so
+2026-05-27:00:52:22CST * 4 * information * 0x1915c410_Collections * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 0 * information * 0x19be3130 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 1 * information * 0x19be3130 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x1915c410_0x19be3130'.
+2026-05-27:00:52:22CST * 2 * information * 0x1915c410_0x19be3130 * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x19be3130'.
+2026-05-27:00:52:22CST * 2 * error * 0x1915c410 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 3 * error * 0x1915c410 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 0 * information * 0x190dd2c0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 1 * information * 0x190dd2c0 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:22CST * 2 * information * 0x190dd2c0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 0 * information * 0x190dd2c0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 0 * information * 0x19bc48f0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 1 * information * 0x19bc48f0 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:22CST * 2 * information * 0x19bc48f0 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x190dd2c0_Collections'.
+2026-05-27:00:52:22CST * 3 * information * 0x190dd2c0_Collections * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x19bc48f0'.
+2026-05-27:00:52:22CST * 1 * information * 0x190dd2c0 * KIM_ModelImplementation.cpp:2149 * ModelImplementation object opening model shared library: /home/z203/anaconda3/lib/openkim-models/portable-models/LennardJones_Ar/libkim-api-portable-model.so
+2026-05-27:00:52:22CST * 4 * information * 0x190dd2c0_Collections * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 0 * information * 0x19bc48f0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:22CST * 1 * information * 0x19bc48f0 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x190dd2c0_0x19bc48f0'.
+2026-05-27:00:52:22CST * 2 * information * 0x190dd2c0_0x19bc48f0 * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x19bc48f0'.
+2026-05-27:00:52:22CST * 2 * error * 0x190dd2c0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 3 * error * 0x190dd2c0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 4 * error * 0x190dd2c0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 5 * error * 0x190dd2c0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 6 * error * 0x190dd2c0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 7 * error * 0x190dd2c0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 8 * error * 0x190dd2c0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 9 * error * 0x190dd2c0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 10 * error * 0x190dd2c0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 11 * error * 0x190dd2c0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:22CST * 3 * information * 0x19c72200_0x192681e0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 3 * information * 0x19c72200 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 3 * information * 0x1915c410_0x19be3130 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 4 * information * 0x1915c410 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 3 * information * 0x190dd2c0_0x19bc48f0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:22CST * 12 * information * 0x190dd2c0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 0 * information * 0x1451f710 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x1451f710 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:36CST * 2 * information * 0x1451f710 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 0 * information * 0x1451f710 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 0 * information * 0x14520070 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x14520070 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:36CST * 2 * information * 0x14520070 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x1451f710_Collections'.
+2026-05-27:00:52:36CST * 3 * information * 0x1451f710_Collections * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x14520070'.
+2026-05-27:00:52:36CST * 1 * information * 0x1451f710 * KIM_ModelImplementation.cpp:2149 * ModelImplementation object opening model shared library: /home/z203/anaconda3/lib/openkim-models/portable-models/LennardJones_Ar/libkim-api-portable-model.so
+2026-05-27:00:52:36CST * 4 * information * 0x1451f710_Collections * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 0 * information * 0x14520070 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x14520070 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x1451f710_0x14520070'.
+2026-05-27:00:52:36CST * 2 * information * 0x1451f710_0x14520070 * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x14520070'.
+2026-05-27:00:52:36CST * 2 * error * 0x1451f710 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 0 * information * 0x145216e0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x145216e0 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:36CST * 2 * information * 0x145216e0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 0 * information * 0x145216e0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 0 * information * 0x14521630 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x14521630 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:36CST * 2 * information * 0x14521630 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x145216e0_Collections'.
+2026-05-27:00:52:36CST * 3 * information * 0x145216e0_Collections * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x14521630'.
+2026-05-27:00:52:36CST * 1 * information * 0x145216e0 * KIM_ModelImplementation.cpp:2149 * ModelImplementation object opening model shared library: /home/z203/anaconda3/lib/openkim-models/portable-models/LennardJones_Ar/libkim-api-portable-model.so
+2026-05-27:00:52:36CST * 4 * information * 0x145216e0_Collections * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 0 * information * 0x14521630 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x14521630 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x145216e0_0x14521630'.
+2026-05-27:00:52:36CST * 2 * information * 0x145216e0_0x14521630 * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x14521630'.
+2026-05-27:00:52:36CST * 2 * error * 0x145216e0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 0 * information * 0x14529d80 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x14529d80 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:36CST * 2 * information * 0x14529d80 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 0 * information * 0x14529d80 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 0 * information * 0x1452a070 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x1452a070 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:36CST * 2 * information * 0x1452a070 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x14529d80_Collections'.
+2026-05-27:00:52:36CST * 3 * information * 0x14529d80_Collections * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x1452a070'.
+2026-05-27:00:52:36CST * 1 * information * 0x14529d80 * KIM_ModelImplementation.cpp:2149 * ModelImplementation object opening model shared library: /home/z203/anaconda3/lib/openkim-models/portable-models/LennardJones_Ar/libkim-api-portable-model.so
+2026-05-27:00:52:36CST * 4 * information * 0x14529d80_Collections * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 0 * information * 0x1452a070 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x1452a070 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x14529d80_0x1452a070'.
+2026-05-27:00:52:36CST * 2 * information * 0x14529d80_0x1452a070 * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x1452a070'.
+2026-05-27:00:52:36CST * 2 * error * 0x14529d80 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 0 * information * 0x14529fc0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x14529fc0 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:36CST * 2 * information * 0x14529fc0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 0 * information * 0x14529fc0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 0 * information * 0x14531ef0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x14531ef0 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:36CST * 2 * information * 0x14531ef0 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x14529fc0_Collections'.
+2026-05-27:00:52:36CST * 3 * information * 0x14529fc0_Collections * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x14531ef0'.
+2026-05-27:00:52:36CST * 1 * information * 0x14529fc0 * KIM_ModelImplementation.cpp:2149 * ModelImplementation object opening model shared library: /home/z203/anaconda3/lib/openkim-models/portable-models/LennardJones_Ar/libkim-api-portable-model.so
+2026-05-27:00:52:36CST * 4 * information * 0x14529fc0_Collections * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 0 * information * 0x14531ef0 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x14531ef0 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x14529fc0_0x14531ef0'.
+2026-05-27:00:52:36CST * 2 * information * 0x14529fc0_0x14531ef0 * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x14531ef0'.
+2026-05-27:00:52:36CST * 2 * error * 0x14529fc0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 3 * error * 0x14529fc0 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 0 * information * 0x14531e40 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x14531e40 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:36CST * 2 * information * 0x14531e40 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 0 * information * 0x14531e40 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 0 * information * 0x1453a030 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x1453a030 * KIM_CollectionsImplementation.cpp:645 * Collections object using shared library: /home/z203/anaconda3/lib/libkim-api.so
+2026-05-27:00:52:36CST * 2 * information * 0x1453a030 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x14531e40_Collections'.
+2026-05-27:00:52:36CST * 3 * information * 0x14531e40_Collections * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x1453a030'.
+2026-05-27:00:52:36CST * 1 * information * 0x14531e40 * KIM_ModelImplementation.cpp:2149 * ModelImplementation object opening model shared library: /home/z203/anaconda3/lib/openkim-models/portable-models/LennardJones_Ar/libkim-api-portable-model.so
+2026-05-27:00:52:36CST * 4 * information * 0x14531e40_Collections * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 0 * information * 0x1453a030 * KIM_LogImplementation.cpp:107 * Log object created.  Default verbosity level is 'information'.
+2026-05-27:00:52:36CST * 1 * information * 0x1453a030 * KIM_LogImplementation.cpp:239 * Log object renamed.  ID changed to '0x14531e40_0x1453a030'.
+2026-05-27:00:52:36CST * 2 * information * 0x14531e40_0x1453a030 * KIM_LogImplementation.cpp:243 * Log object renamed.  ID changed from '0x1453a030'.
+2026-05-27:00:52:36CST * 2 * error * 0x14531e40 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 3 * information * 0x1451f710_0x14520070 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 3 * information * 0x1451f710 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 3 * information * 0x145216e0_0x14521630 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 3 * information * 0x145216e0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 3 * information * 0x14529d80_0x1452a070 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 3 * information * 0x14529d80 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 3 * information * 0x14529fc0_0x14531ef0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 4 * information * 0x14529fc0 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 3 * error * 0x14531e40 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 4 * error * 0x14531e40 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 5 * error * 0x14531e40 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 6 * error * 0x14531e40 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 7 * error * 0x14531e40 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 8 * error * 0x14531e40 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 9 * error * 0x14531e40 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 10 * error * 0x14531e40 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 11 * error * 0x14531e40 * KIM_ModelImplementation.cpp:1394 * ClearThenRefresh() called but no parameter pointers have been set (and no Refresh routine has been provided).
+2026-05-27:00:52:36CST * 3 * information * 0x14531e40_0x1453a030 * KIM_LogImplementation.cpp:119 * Log object destroyed.
+2026-05-27:00:52:36CST * 12 * information * 0x14531e40 * KIM_LogImplementation.cpp:119 * Log object destroyed.
