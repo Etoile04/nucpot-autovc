@@ -1,4 +1,5 @@
 import logging
+import uuid
 from typing import Any, Generator
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -96,7 +97,7 @@ def get_potential(pid: int, db: Session = Depends(get_db)):
     return pot
 
 
-# ── Verification v1 ────────────────────────────────────────────────
+# ── Verification v1 (legacy, SQLite-backed) ───────────────────────
 @router.post("/verification", response_model=VerificationJobResponse, status_code=202)
 def submit_verification(body: VerificationRequest, db: Session = Depends(get_db)):
     pot = db.query(Potential).filter(Potential.name == body.potential_name).first()
@@ -126,11 +127,10 @@ def get_verification(jid: int, db: Session = Depends(get_db)):
     return job
 
 
-# ── Verification v2 (Phase 2: parameterized) ──────────────────────
+# ── Verification v2 (Phase 2: parameterized, legacy SQLite) ──────
 @router.post("/verification/v2", response_model=VerificationJobResponse, status_code=202)
 def submit_verification_v2(body: ParameterizedVerificationRequest, db: Session = Depends(get_db)):
     """Submit a parameterized verification using a template."""
-    # Validate template
     try:
         properties = resolve_template_properties(body.template, body.property_overrides)
     except ValueError as e:
@@ -138,7 +138,16 @@ def submit_verification_v2(body: ParameterizedVerificationRequest, db: Session =
 
     pot = db.query(Potential).filter(Potential.name == body.potential_name).first()
     if not pot:
-        raise HTTPException(404, f"Potential {body.potential_name} not found")
+        logger.info(f"Auto-creating potential: {body.potential_name}")
+        pot = Potential(
+            name=body.potential_name,
+            potential_type="unknown",
+            species=body.species if hasattr(body, 'species') and body.species else [],
+            kim_model_id=body.kim_model_id if hasattr(body, 'kim_model_id') else None,
+        )
+        db.add(pot)
+        db.commit()
+        db.refresh(pot)
 
     job = VerificationJob(
         potential_id=pot.id,
@@ -149,8 +158,6 @@ def submit_verification_v2(body: ParameterizedVerificationRequest, db: Session =
     db.commit()
     db.refresh(job)
 
-    # Store parameter overrides as job metadata (if model supports it)
-    # For now, pass via Celery kwargs
     try:
         from autovc.workers.tasks import run_verification
         task_kwargs = {"parameter_overrides": body.parameter_overrides} if body.parameter_overrides else {}
@@ -171,7 +178,6 @@ def get_verification_report(jid: int, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(404, "Not found")
 
-    # Build property scores from job results
     property_scores = []
     grades = []
     for result in job.results:
@@ -205,3 +211,151 @@ def get_verification_report(jid: int, db: Session = Depends(get_db)):
         summary=summary,
         created_at=job.completed_at,
     )
+
+
+# ══════════════════════════════════════════════════════════════════
+# ── NEW: Supabase + LAMMPS Verification ───────────────────────────
+# ══════════════════════════════════════════════════════════════════
+
+import asyncio
+from pydantic import BaseModel, Field
+from autovc.supabase_client import get_potential, create_verification, update_verification, get_verification as get_supabase_verification
+
+
+class SupabaseVerifyRequest(BaseModel):
+    """Request body for Supabase+LAMMPS verification."""
+    potential_id: str = Field(..., description="UUID of the potential in Supabase")
+    template: str = Field(default="basic", description="Template: basic|mechanical|defect|comprehensive")
+    triggered_by: str = Field(default="admin", description="Who triggered this verification")
+
+
+TEMPLATE_ESTIMATED_SECONDS = {
+    "basic": 30,
+    "mechanical": 120,
+    "defect": 180,
+    "comprehensive": 300,
+}
+
+
+async def _run_lammps_verification(job_id: str, potential_id: str, template: str):
+    """Background task: run LAMMPS verification and update Supabase."""
+    try:
+        from autovc.runners.lammps_runner import LAMMPSRunner
+
+        meta = await get_potential(potential_id)
+
+        async def progress_callback(progress: float, step: str, partial_results: dict = None):
+            try:
+                await update_verification(job_id, {
+                    "progress": progress,
+                    "current_step": step,
+                    "status": "running",
+                    "partial_results": partial_results or {},
+                })
+            except Exception as e:
+                logger.warning(f"Progress update failed: {e}")
+
+        runner = LAMMPSRunner(potential_meta=meta)
+        result = await runner.run_template(template, progress_callback=progress_callback)
+
+        await update_verification(job_id, {
+            "status": "completed",
+            "progress": 1.0,
+            "current_step": "done",
+            "results": result["results"],
+            "overall_grade": result.get("overall_grade"),
+        })
+
+    except Exception as e:
+        logger.error(f"LAMMPS verification failed for job {job_id}: {e}")
+        try:
+            await update_verification(job_id, {
+                "status": "failed",
+                "error_message": str(e),
+                "current_step": "failed",
+            })
+        except Exception:
+            pass
+
+
+@router.post("/verify")
+async def submit_supabase_verify(body: SupabaseVerifyRequest):
+    """Submit a verification job using Supabase + LAMMPS backend.
+
+    1. Fetch potential metadata from Supabase
+    2. Create verification record (status=pending)
+    3. Start async LAMMPS computation
+    4. Return job info
+    """
+    from autovc.config import get_settings
+    settings = get_settings()
+
+    if not settings.SUPABASE_URL:
+        raise HTTPException(500, "SUPABASE_URL not configured")
+
+    # Validate template
+    if body.template not in TEMPLATE_ESTIMATED_SECONDS:
+        raise HTTPException(400, f"Invalid template: {body.template}. Use basic|mechanical|defect|comprehensive")
+
+    # Check potential exists
+    try:
+        meta = await get_potential(body.potential_id)
+    except ValueError:
+        raise HTTPException(404, f"Potential {body.potential_id} not found in Supabase")
+    except Exception as e:
+        raise HTTPException(500, f"Supabase error: {e}")
+
+    # Create verification record
+    job_id = str(uuid.uuid4())
+    record = {
+        "id": job_id,
+        "potential_id": body.potential_id,
+        "template": body.template,
+        "status": "pending",
+        "progress": 0.0,
+        "current_step": "queued",
+        "triggered_by": body.triggered_by,
+        "results": {},
+        "overall_grade": None,
+        "error_message": None,
+    }
+
+    try:
+        await create_verification(record)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to create verification record: {e}")
+
+    # Start background LAMMPS task
+    estimated = TEMPLATE_ESTIMATED_SECONDS.get(body.template, 120)
+    asyncio.create_task(_run_lammps_verification(job_id, body.potential_id, body.template))
+
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "estimated_seconds": estimated,
+    }
+
+
+@router.get("/verify/{job_id}")
+async def get_supabase_verify_status(job_id: str):
+    """Get verification job status and results from Supabase."""
+    try:
+        record = await get_supabase_verification(job_id)
+    except Exception as e:
+        raise HTTPException(500, f"Supabase error: {e}")
+
+    if not record:
+        raise HTTPException(404, f"Verification job {job_id} not found")
+
+    return {
+        "job_id": record.get("id"),
+        "status": record.get("status"),
+        "progress": record.get("progress", 0.0),
+        "current_step": record.get("current_step", ""),
+        "estimated_remaining_seconds": None,
+        "results": record.get("results", {}),
+        "overall_grade": record.get("overall_grade"),
+        "error_message": record.get("error_message"),
+        "template": record.get("template"),
+        "created_at": record.get("created_at"),
+    }

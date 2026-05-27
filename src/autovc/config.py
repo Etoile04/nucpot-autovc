@@ -1,5 +1,7 @@
 """Application configuration via environment variables."""
 
+import os
+
 from pydantic_settings import BaseSettings
 
 
@@ -12,17 +14,20 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
 
-    # Supabase (optional, for NucPot integration)
+    # Supabase (for NucPot integration)
     SUPABASE_URL: str = ""
     SUPABASE_ANON_KEY: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""
 
-    # Grading thresholds (relative error)
-    GRADING_THRESHOLD_A: float = 0.01   # ≤1%  → A
-    GRADING_THRESHOLD_B: float = 0.03   # ≤3%  → B
-    GRADING_THRESHOLD_C: float = 0.05   # ≤5%  → C
-    GRADING_THRESHOLD_D: float = 0.10   # ≤10% → D
-    # >10% → F
+    # LAMMPS binary
+    LAMMPS_BIN: str = os.environ.get("LAMMPS_BIN", "lmp_serial")
+
+    # Grading thresholds (relative error) — updated per spec
+    GRADING_THRESHOLD_A: float = 0.02   # ≤2%  → A
+    GRADING_THRESHOLD_B: float = 0.05   # ≤5%  → B
+    GRADING_THRESHOLD_C: float = 0.10   # ≤10% → C
+    GRADING_THRESHOLD_D: float = 0.20   # ≤20% → D
+    # >20% → F
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
