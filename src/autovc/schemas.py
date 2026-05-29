@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from uuid import UUID
 
 
 class VerificationRequest(BaseModel):
@@ -86,3 +87,55 @@ class ScoreReport(BaseModel):
     property_scores: list[dict[str, Any]]
     summary: str
     created_at: datetime | None = None
+
+
+# ── Reference Values ──────────────────────────────────────────────
+class ReferenceValueResponse(BaseModel):
+    id: str
+    element_system: str
+    phase: str | None = None
+    property: str
+    value: float
+    unit: str | None = None
+    uncertainty: float | None = None
+    temperature: float | None = None
+    pressure: float | None = 0
+    source: str | None = None
+    source_doi: str | None = None
+    method: str | None = None
+    created_at: datetime | None = None
+    model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _uuid_to_str(cls, data):
+        if isinstance(data, dict):
+            if "id" in data and isinstance(data["id"], UUID):
+                data["id"] = str(data["id"])
+        elif hasattr(data, "__dict__"):
+            if isinstance(data.__dict__.get("id"), UUID):
+                data.id = str(data.id)
+        return data
+
+
+class ReferenceValueCreate(BaseModel):
+    element_system: str
+    phase: str | None = None
+    property: str
+    value: float
+    unit: str | None = None
+    uncertainty: float | None = None
+    temperature: float | None = None
+    pressure: float | None = 0
+    source: str | None = None
+    source_doi: str | None = None
+    method: str | None = None
+
+
+class ReferenceValueUpdate(BaseModel):
+    value: float | None = None
+    uncertainty: float | None = None
+    temperature: float | None = None
+    source: str | None = None
+    source_doi: str | None = None
+    method: str | None = None

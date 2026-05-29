@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Float, String, DateTime, ForeignKey, JSON
+from sqlalchemy import Float, String, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from autovc.database import Base
 
@@ -41,3 +41,22 @@ class VerificationResult(Base):
     grade: Mapped[str | None] = mapped_column(String(2), nullable=True)
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     job: Mapped["VerificationJob"] = relationship(back_populates="results")
+
+
+class ReferenceValue(Base):
+    __tablename__ = "reference_values"
+    __table_args__ = {"schema": "public", "extend_existing": True}
+
+    id = mapped_column(String(64), primary_key=True)
+    element_system = mapped_column(String(64), nullable=False)
+    phase = mapped_column(String(32), nullable=True)
+    property = mapped_column(String(64), nullable=False)
+    value = mapped_column(Float, nullable=False)
+    unit = mapped_column(String(16), nullable=True)
+    uncertainty = mapped_column(Float, nullable=True)
+    temperature = mapped_column(Float, nullable=True)
+    pressure = mapped_column(Float, default=0)
+    source = mapped_column(Text, nullable=True)
+    source_doi = mapped_column(String(128), nullable=True)
+    method = mapped_column(String(32), nullable=True)
+    created_at = mapped_column(DateTime, nullable=True)

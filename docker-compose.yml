@@ -4,9 +4,9 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "8002:8000"
     environment:
-      - DATABASE_URL=sqlite:///./data/autovc.db
+      - DATABASE_URL=postgresql://nucpot:nucpot@nucpot-nucpot-db-1:5432/nucpot
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -21,9 +21,9 @@ services:
 
   worker:
     build: .
-    command: ["celery", "-A", "autovc.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    command: ["python", "-m", "celery", "-A", "autovc.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
     environment:
-      - DATABASE_URL=sqlite:///./data/autovc.db
+      - DATABASE_URL=postgresql://nucpot:nucpot@nucpot-nucpot-db-1:5432/nucpot
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -38,8 +38,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis-data:/data
     restart: unless-stopped
@@ -47,3 +45,8 @@ services:
 volumes:
   autovc-data:
   redis-data:
+
+networks:
+  default:
+    name: nucpot_default
+    external: true

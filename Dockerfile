@@ -4,7 +4,7 @@
 FROM python:3.11-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake git pkg-config wget \
+    build-essential cmake gfortran git pkg-config wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Build kim-api from source
@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir kimpy
 
 # Install project deps
 COPY pyproject.toml ./
+COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
 FROM python:3.11-slim AS runtime
@@ -32,7 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local/lib/libkim-api* /usr/local/lib/
 COPY --from=builder /usr/local/lib/pkgconfig/ /usr/local/lib/pkgconfig/
 COPY --from=builder /usr/local/include/kim-api/ /usr/local/include/kim-api/
-COPY --from=builder /usr/local/lib/cmake/kim-api/ /usr/local/lib/cmake/kim-api/
+COPY --from=builder /usr/local/share/cmake/kim-api/ /usr/local/lib/cmake/kim-api/
 COPY --from=builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
 RUN ldconfig
 
@@ -52,4 +53,4 @@ ENV REDIS_URL=redis://redis:6379/0
 ENV CELERY_BROKER_URL=redis://redis:6379/0
 ENV CELERY_RESULT_BACKEND=redis://redis:6379/0
 
-CMD ["uvicorn", "autovc.main:create_app", "--host", "0.0.0.0", "--port", "8000", "--factory"]
+CMD ["python", "-m", "uvicorn", "autovc.main:create_app", "--host", "0.0.0.0", "--port", "8000", "--factory"]
