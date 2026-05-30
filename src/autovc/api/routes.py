@@ -4,7 +4,7 @@ from typing import Any, Generator
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from autovc.database import get_session_factory as _default_session_factory
-from autovc.models import Potential, VerificationJob
+from autovc.models import Potential, VerificationJob, ReferenceValue
 from autovc.schemas import (
     PotentialCreate,
     PotentialResponse,
@@ -13,6 +13,11 @@ from autovc.schemas import (
     ParameterizedVerificationRequest,
     TemplateResponse,
     ScoreReport,
+    ReferenceValueResponse,
+    AdminRefValueUpdate,
+    AdminApproveBody,
+    AdminRejectBody,
+    AdminBatchBody,
 )
 from autovc.core.templates import get_template, list_templates, resolve_template_properties
 from autovc.core.grading import compute_overall_grade
@@ -428,3 +433,182 @@ def delete_reference(ref_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Reference value not found")
     db.delete(ref)
     db.commit()
+
+
+# ── Admin Reference Value Routes ──────────────────────────────────
+from datetime import datetime, timezone as _tz
+from sqlalchemy import text as sa_text, func as sa_func
+
+# Audit helper
+def _audit_ref(db: Session, ref_id: str, action: str, old_data: dict | None, new_data: dict | None, reason: str | None = None, performed_by: str = "admin"):
+    import json as _json
+    db.execute(sa_text(
+        "INSERT INTO reference_value_audit (id, reference_value_id, action, old_data, new_data, reason, performed_by) "
+        "VALUES (gen_random_uuid(), :rid, :act, CAST(:oldj AS jsonb), CAST(:newj AS jsonb), :reason, :by)"
+    ), {"rid": ref_id, "act": action, "oldj": _json.dumps(old_data, default=str), "newj": _json.dumps(new_data, default=str), "reason": reason, "by": performed_by})
+
+
+def _ref_to_dict(ref) -> dict:
+    """Convert ReferenceValue ORM object to dict."""
+    return {
+        "id": str(ref.id), "element_system": ref.element_system, "phase": ref.phase,
+        "property": ref.property, "value": ref.value, "unit": ref.unit,
+        "uncertainty": ref.uncertainty, "temperature": ref.temperature,
+        "pressure": ref.pressure, "source": ref.source, "source_doi": ref.source_doi,
+        "method": ref.method, "created_at": ref.created_at.isoformat() if ref.created_at else None,
+        "updated_at": ref.updated_at.isoformat() if ref.updated_at else None,
+        "confidence": ref.confidence, "needs_review": ref.needs_review,
+        "cache_level": ref.cache_level, "status": ref.status, "review_notes": ref.review_notes,
+    }
+
+
+@router.get("/admin/reference-values")
+def admin_list_ref_values(
+    needs_review: bool | None = None,
+    confidence: str | None = None,
+    element_system: str | None = None,
+    status: str | None = None,
+    page: int = 1,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """List reference values with admin filters."""
+    q = db.query(ReferenceValue)
+    if needs_review is not None:
+        q = q.filter(ReferenceValue.needs_review == needs_review)
+    if confidence:
+        q = q.filter(ReferenceValue.confidence == confidence)
+    if element_system:
+        q = q.filter(ReferenceValue.element_system == element_system)
+    if status:
+        q = q.filter(ReferenceValue.status == status)
+    total = q.count()
+    refs = q.order_by(ReferenceValue.element_system, ReferenceValue.property).offset((page - 1) * limit).limit(limit).all()
+    return {"data": [ReferenceValueResponse.model_validate(r).model_dump() for r in refs], "total": total, "page": page, "limit": limit}
+
+
+@router.post("/admin/reference-values/batch")
+def admin_batch_ref_values(body: AdminBatchBody, db: Session = Depends(get_db)):
+    """Batch approve or reject reference values."""
+    results = []
+    for rid in body.ids:
+        ref = db.query(ReferenceValue).filter(ReferenceValue.id == rid).first()
+        if not ref:
+            results.append({"id": rid, "status": "not_found"})
+            continue
+        old = _ref_to_dict(ref)
+        if body.action == "approve":
+            ref.needs_review = False
+            ref.status = "active"
+            if body.confidence:
+                ref.confidence = body.confidence
+        elif body.action == "reject":
+            ref.status = "rejected"
+        ref.updated_at = datetime.now(_tz.utc)
+        db.flush()
+        new = _ref_to_dict(ref)
+        _audit_ref(db, rid, body.action, old, new, reason=body.reason)
+        results.append({"id": rid, "status": "ok"})
+    db.commit()
+    return {"results": results, "total": len(body.ids), "processed": len([r for r in results if r["status"] == "ok"])}
+
+
+@router.get("/admin/reference-values/matrix")
+def admin_ref_matrix(db: Session = Depends(get_db)):
+    """Get reference values in matrix format for heatmap display."""
+    refs = db.query(ReferenceValue).filter(ReferenceValue.status != "deleted").order_by(ReferenceValue.element_system, ReferenceValue.phase).all()
+    systems: dict[tuple, dict] = {}
+    for ref in refs:
+        key = (ref.element_system, ref.phase or "")
+        if key not in systems:
+            systems[key] = {"element_system": ref.element_system, "phase": ref.phase, "properties": {}}
+        systems[key]["properties"][ref.property] = {
+            "value": ref.value, "unit": ref.unit,
+            "confidence": ref.confidence, "needs_review": ref.needs_review,
+            "status": ref.status,
+        }
+    return {"systems": list(systems.values())}
+
+@router.get("/admin/reference-values/{ref_id}")
+def admin_get_ref_value(ref_id: str, db: Session = Depends(get_db)):
+    """Get a single reference value by ID."""
+    ref = db.query(ReferenceValue).filter(ReferenceValue.id == ref_id).first()
+    if not ref:
+        raise HTTPException(404, "Reference value not found")
+    return ReferenceValueResponse.model_validate(ref).model_dump()
+
+
+@router.patch("/admin/reference-values/{ref_id}")
+def admin_patch_ref_value(ref_id: str, body: AdminRefValueUpdate, db: Session = Depends(get_db)):
+    """Update a reference value with audit logging."""
+    ref = db.query(ReferenceValue).filter(ReferenceValue.id == ref_id).first()
+    if not ref:
+        raise HTTPException(404, "Reference value not found")
+    old = _ref_to_dict(ref)
+    updates = body.model_dump(exclude_unset=True)
+    for k, v in updates.items():
+        setattr(ref, k, v)
+    ref.updated_at = datetime.now(_tz.utc)
+    db.flush()
+    new = _ref_to_dict(ref)
+    _audit_ref(db, ref_id, "update", old, new)
+    db.commit()
+    db.refresh(ref)
+    return ReferenceValueResponse.model_validate(ref).model_dump()
+
+
+@router.post("/admin/reference-values/{ref_id}/approve")
+def admin_approve_ref_value(ref_id: str, body: AdminApproveBody | None = None, db: Session = Depends(get_db)):
+    """Approve a reference value."""
+    ref = db.query(ReferenceValue).filter(ReferenceValue.id == ref_id).first()
+    if not ref:
+        raise HTTPException(404, "Reference value not found")
+    old = _ref_to_dict(ref)
+    ref.needs_review = False
+    ref.status = "active"
+    if body:
+        if body.confidence:
+            ref.confidence = body.confidence
+        if body.review_notes:
+            ref.review_notes = body.review_notes
+    ref.updated_at = datetime.now(_tz.utc)
+    db.flush()
+    new = _ref_to_dict(ref)
+    _audit_ref(db, ref_id, "approve", old, new)
+    db.commit()
+    db.refresh(ref)
+    return ReferenceValueResponse.model_validate(ref).model_dump()
+
+
+@router.post("/admin/reference-values/{ref_id}/reject")
+def admin_reject_ref_value(ref_id: str, body: AdminRejectBody | None = None, db: Session = Depends(get_db)):
+    """Reject a reference value."""
+    ref = db.query(ReferenceValue).filter(ReferenceValue.id == ref_id).first()
+    if not ref:
+        raise HTTPException(404, "Reference value not found")
+    old = _ref_to_dict(ref)
+    ref.status = "rejected"
+    ref.updated_at = datetime.now(_tz.utc)
+    db.flush()
+    new = _ref_to_dict(ref)
+    _audit_ref(db, ref_id, "reject", old, new, reason=body.reason if body else None)
+    db.commit()
+    db.refresh(ref)
+    return ReferenceValueResponse.model_validate(ref).model_dump()
+
+
+@router.delete("/admin/reference-values/{ref_id}")
+def admin_delete_ref_value(ref_id: str, db: Session = Depends(get_db)):
+    """Soft-delete a reference value."""
+    ref = db.query(ReferenceValue).filter(ReferenceValue.id == ref_id).first()
+    if not ref:
+        raise HTTPException(404, "Reference value not found")
+    old = _ref_to_dict(ref)
+    ref.status = "deleted"
+    ref.updated_at = datetime.now(_tz.utc)
+    db.flush()
+    new = _ref_to_dict(ref)
+    _audit_ref(db, ref_id, "delete", old, new)
+    db.commit()
+    return {"status": "deleted", "id": ref_id}
+

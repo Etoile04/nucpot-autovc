@@ -104,6 +104,12 @@ class ReferenceValueResponse(BaseModel):
     source_doi: str | None = None
     method: str | None = None
     created_at: datetime | None = None
+    updated_at: datetime | None = None
+    confidence: str | None = None
+    needs_review: bool | None = None
+    cache_level: str | None = None
+    status: str | None = None
+    review_notes: str | None = None
     model_config = {"from_attributes": True}
 
     @model_validator(mode="before")
@@ -139,3 +145,40 @@ class ReferenceValueUpdate(BaseModel):
     source: str | None = None
     source_doi: str | None = None
     method: str | None = None
+
+
+# ── Admin Reference Value Schemas ─────────────────────────────────
+class AdminRefValueUpdate(BaseModel):
+    value: float | None = None
+    unit: str | None = None
+    uncertainty: float | None = None
+    temperature: float | None = None
+    source: str | None = None
+    source_doi: str | None = None
+    method: str | None = None
+    confidence: str | None = None
+    review_notes: str | None = None
+    needs_review: bool | None = None
+
+
+class AdminApproveBody(BaseModel):
+    confidence: str | None = None
+    review_notes: str | None = None
+
+
+class AdminRejectBody(BaseModel):
+    reason: str | None = None
+
+
+class AdminBatchBody(BaseModel):
+    ids: list[str]
+    action: str  # 'approve' or 'reject'
+    confidence: str | None = None
+    reason: str | None = None
+
+
+class AdminRefValueListResponse(BaseModel):
+    data: list[ReferenceValueResponse]
+    total: int
+    page: int
+    limit: int

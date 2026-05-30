@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Float, String, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import Float, String, DateTime, ForeignKey, JSON, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from autovc.database import Base
 
@@ -60,3 +60,16 @@ class ReferenceValue(Base):
     source_doi = mapped_column(String(128), nullable=True)
     method = mapped_column(String(32), nullable=True)
     created_at = mapped_column(DateTime, nullable=True)
+    updated_at = mapped_column(DateTime, nullable=True)
+    confidence = mapped_column(String(16), nullable=True, default='high')
+    needs_review = mapped_column(Boolean, nullable=True, default=False)
+    cache_level = mapped_column(String(16), nullable=True)
+    status = mapped_column(String(20), nullable=True, default='active')
+    review_notes = mapped_column(Text, nullable=True)
+
+# Extended fields added to ReferenceValue for admin review
+# These columns exist in PG but were not in the ORM model
+import sqlalchemy as sa
+from sqlalchemy.orm import column_property
+
+# We need to update the class - let us use a different approach
