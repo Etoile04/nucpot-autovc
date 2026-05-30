@@ -255,3 +255,33 @@ def _query_pg_full(
     except Exception as e:
         logger.debug(f"PG full query failed: {e}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# ORM-based API (for CRUD endpoints)
+# ---------------------------------------------------------------------------
+
+def get_reference_from_db(db_session=None):
+    """Query ReferenceValue from DB via SQLAlchemy ORM.
+
+    Returns nested dict: {element_system: {phase: {property: {value, unit, source}}}}
+    Falls back to _FALLBACK if DB unavailable.
+    """
+    if db_session is not None:
+        try:
+            from autovc.models import ReferenceValue
+            refs = db_session.query(ReferenceValue).all()
+            if refs:
+                result = {}
+                for r in refs:
+                    es = r.element_system
+                    phase_key = r.phase or "unknown"
+                    result.setdefault(es, {}).setdefault(phase_key, {})[r.property] = {
+                        "value": r.value,
+                        "unit": r.unit,
+                        "source": r.source,
+                    }
+                return result
+        except Exception:
+            pass
+    return _FALLBACK

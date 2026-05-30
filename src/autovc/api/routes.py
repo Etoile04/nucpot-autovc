@@ -359,3 +359,120 @@ async def get_supabase_verify_status(job_id: str):
         "template": record.get("template"),
         "created_at": record.get("created_at"),
     }
+
+
+# ══════════════════════════════════════════════════════════════════
+# ── Batch Verification ────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+
+class BatchVerifyRequest(BaseModel):
+    """Submit multiple potentials for verification."""
+    potential_ids: list[str] = Field(..., description="List of potential UUIDs")
+    template: str = Field(default="basic")
+    triggered_by: str = Field(default="admin")
+
+
+@router.post("/verify/batch")
+async def submit_batch_verify(body: BatchVerifyRequest):
+    """Submit batch verification for multiple potentials."""
+    if len(body.potential_ids) > 50:
+        raise HTTPException(400, "Maximum 50 potentials per batch")
+    if body.template not in TEMPLATE_ESTIMATED_SECONDS:
+        raise HTTPException(400, f"Invalid template: {body.template}")
+
+    jobs = []
+    for pid in body.potential_ids:
+        try:
+            meta = await get_potential(pid)
+        except (ValueError, Exception):
+            jobs.append({"potential_id": pid, "status": "skipped", "error": "not found"})
+            continue
+
+        job_id = str(uuid.uuid4())
+        record = {
+            "id": job_id,
+            "potential_id": pid,
+            "template": body.template,
+            "status": "pending",
+            "progress": 0.0,
+            "current_step": "queued",
+            "triggered_by": body.triggered_by,
+            "results": {},
+            "overall_grade": None,
+            "error_message": None,
+        }
+        try:
+            await create_verification(record)
+            asyncio.create_task(_run_lammps_verification(job_id, pid, body.template))
+            jobs.append({"potential_id": pid, "job_id": job_id, "status": "pending"})
+        except Exception as e:
+            jobs.append({"potential_id": pid, "status": "failed", "error": str(e)})
+
+    return {"batch_size": len(body.potential_ids), "jobs": jobs}
+
+
+# ══════════════════════════════════════════════════════════════════
+# ── Report Export ─────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+
+from fastapi.responses import JSONResponse
+
+
+@router.get("/verify/{job_id}/report")
+async def export_verification_report(job_id: str, format: str = "json"):
+    """Export verification report as JSON."""
+    try:
+        record = await get_supabase_verification(job_id)
+    except Exception as e:
+        raise HTTPException(500, f"Supabase error: {e}")
+
+    if not record:
+        raise HTTPException(404, f"Verification job {job_id} not found")
+
+    results = record.get("results", {})
+    overall = record.get("overall_grade")
+
+    # Build structured report
+    property_reports = []
+    for prop_name, prop_data in results.items():
+        entry = {
+            "property": prop_name,
+            "computed_value": prop_data.get("value"),
+            "unit": prop_data.get("unit", ""),
+            "reference_value": prop_data.get("reference"),
+            "grade": prop_data.get("grade"),
+            "relative_error": prop_data.get("relative_error"),
+        }
+        if isinstance(prop_data.get("value"), dict):
+            # Elastic constants: nested
+            for sub_prop, sub_val in prop_data["value"].items():
+                ref_v = prop_data.get("reference", {}).get(sub_prop) if isinstance(prop_data.get("reference"), dict) else None
+                grade_info = prop_data.get("grades", {}).get(sub_prop, {}) if isinstance(prop_data.get("grades"), dict) else {}
+                entry = {
+                    "property": f"{prop_name}.{sub_prop}",
+                    "computed_value": sub_val,
+                    "unit": prop_data.get("unit", "GPa"),
+                    "reference_value": ref_v,
+                    "grade": grade_info.get("grade"),
+                    "relative_error": grade_info.get("relative_error"),
+                }
+                property_reports.append(entry)
+        else:
+            property_reports.append(entry)
+
+    passed = sum(1 for r in property_reports if r["grade"] in ("A", "B"))
+    total = len(property_reports)
+
+    report = {
+        "job_id": job_id,
+        "potential_id": record.get("potential_id"),
+        "template": record.get("template"),
+        "status": record.get("status"),
+        "overall_grade": overall,
+        "summary": f"{passed}/{total} properties passed (A or B)",
+        "properties": property_reports,
+        "created_at": record.get("created_at"),
+        "completed_at": record.get("completed_at"),
+    }
+
+    return JSONResponse(content=report)

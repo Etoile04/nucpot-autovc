@@ -22,14 +22,25 @@ from autovc.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# ── Reference values for grading ────────────────────────────────────
-REFERENCE_VALUES: dict[str, dict[str, dict[str, float]]] = {
-    "U": {"BCC": {"lattice_constant": 2.85, "cohesive_energy": -5.49}},
-    "Mo": {"BCC": {"lattice_constant": 3.15, "cohesive_energy": -6.82}},
-    "Zr": {"BCC": {"lattice_constant": 3.61, "cohesive_energy": -6.25}},
-    "U-Mo": {"BCC": {"lattice_constant": 3.40}},
-    "U-Zr": {"BCC": {"lattice_constant": 3.45}},
-}
+
+# ── Reference value lookup via PG ─────────────────────────────────
+def _get_ref_value(material: str, structure: str, prop: str) -> float | None:
+    """Look up reference value from PG (with fallback)."""
+    try:
+        from autovc.reference.data import get_reference_value
+        result = get_reference_value(material, structure, prop)
+        if result and result.get("value") is not None:
+            return float(result["value"])
+    except Exception as e:
+        logger.debug(f"PG ref lookup failed for {material}/{structure}/{prop}: {e}")
+    # Minimal fallback for initial lattice guess
+    _GUESS: dict[str, float] = {
+        "U": 2.85, "Mo": 3.15, "Zr": 3.61,
+        "U-Mo": 3.40, "U-Zr": 3.45,
+    }
+    if prop == "lattice_constant":
+        return _GUESS.get(material, 3.4)
+    return None
 
 # Grading thresholds: A < 2%, B < 5%, C < 10%, D < 20%, F >= 20%
 GRADE_THRESHOLDS = (0.02, 0.05, 0.10, 0.20)
@@ -109,9 +120,12 @@ def _generate_elastic_input(
     structure: str = "bcc",
     size: int = 3,
 ) -> str:
-    """Generate LAMMPS input for elastic constants via strain-energy method."""
+    """Generate LAMMPS input for elastic constants via strain-energy method.
+
+    Computes C11 (uniaxial xx), C12 (uniaxial yy), C44 (shear xy).
+    For cubic crystals: C11 = dE/(eps^2 * V), C12 similar, C44 = dE/(gamma^2 * V).
+    """
     element = elements[0] if elements else "U"
-    # Use a smaller supercell for elastic calculations
     return f"""units metal
 dimension 3
 boundary p p p
@@ -159,6 +173,19 @@ change_box all y delta ${{eps}} ${{eps}} remap units box
 minimize 1e-10 1e-10 500 5000
 variable e_eyy equal pe
 print "RESULT e_eyy ${{e_eyy}}"
+
+# shear xy strain (for C44)
+clear
+lattice {structure} {guess_a}
+region box block 0 {size} 0 {size} 0 {size}
+create_box 1 box
+create_atoms 1 box
+{pair_style}
+{pair_coeff}
+change_box all xy delta ${{eps}} remap units box
+minimize 1e-10 1e-10 500 5000
+variable e_shear_xy equal pe
+print "RESULT e_shear_xy ${{e_shear_xy}}"
 
 print "RESULT reference_energy ${{e0}}"
 print "RESULT volume ${{v0}}"
@@ -323,9 +350,9 @@ class LAMMPSRunner:
         element = self.elements[0] if self.elements else "U"
         guess = 3.4
         # Check reference for a better guess
-        ref = REFERENCE_VALUES.get(element, {}).get("BCC", {})
-        if "lattice_constant" in ref:
-            guess = ref["lattice_constant"]
+        ref_lc = _get_ref_value(element, "BCC", "lattice_constant")
+        if ref_lc is not None:
+            guess = ref_lc
 
         if prop_name in ("lattice_constant", "cohesive_energy"):
             script = _generate_lattice_input(
@@ -336,14 +363,14 @@ class LAMMPSRunner:
             results = {}
             if "lattice_constant" in parsed:
                 v = parsed["lattice_constant"]
-                ref_v = ref.get("lattice_constant")
+                ref_v = _get_ref_value(element, "BCC", "lattice_constant")
                 g = _grade_property(v, ref_v)
                 results["lattice_constant"] = {
                     "value": v, "unit": "angstrom", "reference": ref_v, **g,
                 }
             if "cohesive_energy" in parsed:
                 v = parsed["cohesive_energy"]
-                ref_v = ref.get("cohesive_energy")
+                ref_v = _get_ref_value(element, "BCC", "cohesive_energy")
                 g = _grade_property(v, ref_v)
                 results["cohesive_energy"] = {
                     "value": v, "unit": "eV/atom", "reference": ref_v, **g,
@@ -364,15 +391,36 @@ class LAMMPSRunner:
             e0 = parsed.get("reference_energy", 0)
             e_exx = parsed.get("e_exx", 0)
             e_eyy = parsed.get("e_eyy", 0)
+            e_shear = parsed.get("e_shear_xy", 0)
             eps = parsed.get("strain", 0.01)
             vol = parsed.get("volume", 1)
 
-            # C11 = (e_exx - e0) / (eps^2 * V) * 160.2177  (eV/A^3 → GPa)
-            C11 = (e_exx - e0) / (eps ** 2 * vol) * 160.2177 if vol else 0
-            C12 = (e_eyy - e0) / (eps ** 2 * vol) * 160.2177 if vol else 0
+            # eV/A^3 → GPa: multiply by 160.2177
+            conv = 160.2177
+            C11 = (e_exx - e0) / (eps ** 2 * vol) * conv if vol else 0
+            C12 = (e_eyy - e0) / (eps ** 2 * vol) * conv if vol else 0
+            C44 = (e_shear - e0) / (eps ** 2 * vol) * conv if vol else 0
+
+            # Grade individual constants
+            ref_c11 = _get_ref_value(element, "BCC", "C11")
+            ref_c12 = _get_ref_value(element, "BCC", "C12")
+            ref_c44 = _get_ref_value(element, "BCC", "C44")
+
             result = {
-                "value": {"C11": round(C11, 2), "C12": round(C12, 2), "C44": None},
+                "value": {
+                    "C11": round(C11, 2),
+                    "C12": round(C12, 2),
+                    "C44": round(C44, 2),
+                },
                 "unit": "GPa",
+                "grades": {
+                    "C11": _grade_property(C11, ref_c11),
+                    "C12": _grade_property(C12, ref_c12),
+                    "C44": _grade_property(C44, ref_c44),
+                },
+                "reference": {
+                    "C11": ref_c11, "C12": ref_c12, "C44": ref_c44,
+                },
             }
             if progress_callback:
                 await progress_callback(0.7, "elastic_constants done")
