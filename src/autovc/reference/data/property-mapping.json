@@ -1,0 +1,102 @@
+{
+  "version": "1.0.0",
+  "description": "Property name mapping across L1 (reference_values), L2 (NFMD), L3 (llm-wiki/ontofuel) with validation ranges.",
+  "mappings": [
+    {
+      "ref_property": "lattice_constant",
+      "ref_unit": "Å",
+      "nfmd_names": ["lattice parameter", "lattice constant", "a0", "lattice parameter a"],
+      "nfmd_symbols": ["a", "a0", "a_lat"],
+      "ontofuel_keys": ["latticeConstant"],
+      "range": {"min": 2.0, "max": 6.5}
+    },
+    {
+      "ref_property": "cohesive_energy",
+      "ref_unit": "eV/atom",
+      "nfmd_names": ["cohesive energy"],
+      "nfmd_symbols": ["E_coh", "E_c"],
+      "ontofuel_keys": [],
+      "range": {"min": -10.0, "max": 0.0}
+    },
+    {
+      "ref_property": "C11",
+      "ref_unit": "GPa",
+      "nfmd_names": ["elastic constant C11", "C11"],
+      "nfmd_symbols": ["C11", "c11"],
+      "ontofuel_keys": ["elasticConstantC11"],
+      "range": {"min": 10, "max": 600}
+    },
+    {
+      "ref_property": "C12",
+      "ref_unit": "GPa",
+      "nfmd_names": ["elastic constant C12", "C12"],
+      "nfmd_symbols": ["C12", "c12"],
+      "ontofuel_keys": ["elasticConstantC12"],
+      "range": {"min": 5, "max": 400}
+    },
+    {
+      "ref_property": "C44",
+      "ref_unit": "GPa",
+      "nfmd_names": ["elastic constant C44", "C44"],
+      "nfmd_symbols": ["C44", "c44"],
+      "ontofuel_keys": ["elasticConstantC44"],
+      "range": {"min": 5, "max": 400}
+    },
+    {
+      "ref_property": "C33",
+      "ref_unit": "GPa",
+      "nfmd_names": ["elastic constant C33", "C33"],
+      "nfmd_symbols": ["C33", "c33"],
+      "ontofuel_keys": ["elasticConstantC33"],
+      "range": {"min": 10, "max": 600}
+    },
+    {
+      "ref_property": "bulk_modulus",
+      "ref_unit": "GPa",
+      "nfmd_names": ["bulk modulus", "isothermal bulk modulus"],
+      "nfmd_symbols": ["B", "K", "B0"],
+      "ontofuel_keys": [],
+      "range": {"min": 10, "max": 400}
+    },
+    {
+      "ref_property": "vacancy_formation_energy",
+      "ref_unit": "eV",
+      "nfmd_names": ["vacancy formation energy"],
+      "nfmd_symbols": ["E_vf", "E_vac"],
+      "ontofuel_keys": [],
+      "range": {"min": 0.5, "max": 5.0}
+    },
+    {
+      "ref_property": "formation_energy",
+      "ref_unit": "eV/atom",
+      "nfmd_names": ["formation energy", "enthalpy of formation"],
+      "nfmd_symbols": ["E_f", "ΔH_f"],
+      "ontofuel_keys": ["formationEnergy"],
+      "range": {"min": -2.0, "max": 2.0}
+    },
+    {
+      "ref_property": "surface_energy",
+      "ref_unit": "J/m²",
+      "nfmd_names": ["surface energy"],
+      "nfmd_symbols": ["γ", "E_surf"],
+      "ontofuel_keys": [],
+      "range": {"min": 0.5, "max": 5.0}
+    },
+    {
+      "ref_property": "melting_point",
+      "ref_unit": "K",
+      "nfmd_names": ["melting point", "melting temperature"],
+      "nfmd_symbols": ["T_m", "T_melt"],
+      "ontofuel_keys": ["meltingPoint"],
+      "range": {"min": 300, "max": 4500}
+    },
+    {
+      "ref_property": "thermal_conductivity",
+      "ref_unit": "W/m·K",
+      "nfmd_names": ["thermal conductivity"],
+      "nfmd_symbols": ["κ", "k", "λ"],
+      "ontofuel_keys": ["thermalConductivity"],
+      "range": {"min": 0.1, "max": 500}
+    }
+  ]
+}
