@@ -18,7 +18,9 @@ def client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine)
+    Potential.__table__.create(engine, checkfirst=True)
+    VerificationJob.__table__.create(engine, checkfirst=True)
+    VerificationResult.__table__.create(engine, checkfirst=True)
     TestSession = sessionmaker(bind=engine)
     app = create_app(session_factory=TestSession)
     yield TestClient(app)

@@ -7,7 +7,9 @@ from autovc.models import Potential, VerificationJob, VerificationResult
 @pytest.fixture
 def db_session():
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
+    Potential.__table__.create(engine, checkfirst=True)
+    VerificationJob.__table__.create(engine, checkfirst=True)
+    VerificationResult.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()
     yield session

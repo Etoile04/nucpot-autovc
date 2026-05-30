@@ -4,6 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from autovc.database import Base
+from autovc.models import Potential, VerificationJob, VerificationResult
 import autovc.models  # noqa: F401 — register tables with Base.metadata
 from autovc.main import create_app
 
@@ -14,7 +15,9 @@ def client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine)
+    Potential.__table__.create(engine, checkfirst=True)
+    VerificationJob.__table__.create(engine, checkfirst=True)
+    VerificationResult.__table__.create(engine, checkfirst=True)
     TestSession = sessionmaker(bind=engine)
     app = create_app(session_factory=TestSession)
     return TestClient(app)
