@@ -45,13 +45,34 @@ def _get_ref_value(material: str, structure: str, prop: str) -> float | None:
 # Grading thresholds: A < 2%, B < 5%, C < 10%, D < 20%, F >= 20%
 GRADE_THRESHOLDS = (0.02, 0.05, 0.10, 0.20)
 
+# LAMMPS lattice type mapping
+LAMMPS_LATTICE_MAP = {
+    "bcc": "bcc",
+    "BCC": "bcc",
+    "fcc": "fcc",
+    "FCC": "fcc",
+    "hcp": "hcp",
+    "HCP": "hcp",
+    "diamond": "diamond",
+    "Diamond": "diamond",
+    "diamond_cubic": "diamond",
+    "Cubic": "fcc",      # generic cubic defaults to fcc
+    "SC": "sc",
+    "sc": "sc",
+}
+
+# Ideal c/a ratio for HCP
+HCP_IDEAL_CA = 1.633
+
+
 # Progress milestones
 PROGRESS_MAP = {
-    "lattice_constant": 0.2,
-    "cohesive_energy": 0.4,
-    "elastic_constants": 0.7,
-    "bulk_modulus": 0.85,
-    "vacancy_formation_energy": 1.0,
+    "lattice_constant": 0.15,
+    "cohesive_energy": 0.3,
+    "elastic_constants": 0.5,
+    "bulk_modulus": 0.6,
+    "vacancy_formation_energy": 0.75,
+    "surface_energy": 0.9,
 }
 
 # ── LAMMPS input templates ─────────────────────────────────────────
@@ -87,12 +108,17 @@ def _generate_lattice_input(
 ) -> str:
     """Generate LAMMPS input for lattice constant + cohesive energy."""
     element = elements[0] if elements else "U"
+    lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
+    if lammps_struct == "hcp":
+        lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
+    else:
+        lattice_line = f"lattice {lammps_struct} {guess_a}"
     return f"""units metal
 dimension 3
 boundary p p p
 atom_style atomic
 
-lattice {structure} {guess_a}
+{lattice_line}
 region box block 0 {size} 0 {size} 0 {size}
 create_box 1 box
 create_atoms 1 box
@@ -126,12 +152,17 @@ def _generate_elastic_input(
     For cubic crystals: C11 = dE/(eps^2 * V), C12 similar, C44 = dE/(gamma^2 * V).
     """
     element = elements[0] if elements else "U"
+    lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
+    if lammps_struct == "hcp":
+        lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
+    else:
+        lattice_line = f"lattice {lammps_struct} {guess_a}"
     return f"""units metal
 dimension 3
 boundary p p p
 atom_style atomic
 
-lattice {structure} {guess_a}
+{lattice_line}
 region box block 0 {size} 0 {size} 0 {size}
 create_box 1 box
 create_atoms 1 box
@@ -150,7 +181,7 @@ variable eps equal 0.01
 
 # exx strain (for C11)
 clear
-lattice {structure} {guess_a}
+{lattice_line}
 region box block 0 {size} 0 {size} 0 {size}
 create_box 1 box
 create_atoms 1 box
@@ -163,7 +194,7 @@ print "RESULT e_exx ${{e_exx}}"
 
 # eyy strain (for C12)
 clear
-lattice {structure} {guess_a}
+{lattice_line}
 region box block 0 {size} 0 {size} 0 {size}
 create_box 1 box
 create_atoms 1 box
@@ -176,7 +207,7 @@ print "RESULT e_eyy ${{e_eyy}}"
 
 # shear xy strain (for C44)
 clear
-lattice {structure} {guess_a}
+{lattice_line}
 region box block 0 {size} 0 {size} 0 {size}
 create_box 1 box
 create_atoms 1 box
@@ -203,12 +234,17 @@ def _generate_vacancy_input(
 ) -> str:
     """Generate LAMMPS input for vacancy formation energy."""
     element = elements[0] if elements else "U"
+    lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
+    if lammps_struct == "hcp":
+        lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
+    else:
+        lattice_line = f"lattice {lammps_struct} {guess_a}"
     return f"""units metal
 dimension 3
 boundary p p p
 atom_style atomic
 
-lattice {structure} {guess_a}
+{lattice_line}
 region box block 0 {size} 0 {size} 0 {size}
 create_box 1 box
 create_atoms 1 box
@@ -236,6 +272,62 @@ variable evf equal v_e_vacancy - (v_natom2)/(v_natom)*v_e_perfect
 print "RESULT vacancy_formation_energy ${{evf}}"
 """
 
+
+
+def _generate_surface_energy_input(
+    elements: list[str],
+    pair_style: str,
+    pair_coeff: str,
+    guess_a: float = 3.4,
+    structure: str = "bcc",
+    size: int = 4,
+) -> str:
+    """Generate LAMMPS input for surface energy calculation.
+    
+    Creates a slab with a free surface and computes:
+    E_surface = (E_slab - N_slab/N_bulk * E_bulk) / (2 * A)
+    Factor 2 for two free surfaces.
+    """
+    element = elements[0] if elements else "U"
+    lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
+    
+    if lammps_struct == "hcp":
+        c_param = guess_a * HCP_IDEAL_CA
+        lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
+    else:
+        lattice_line = f"lattice {lammps_struct} {guess_a}"
+    
+    return f"""units metal
+dimension 3
+boundary p p s
+atom_style atomic
+
+{lattice_line}
+region box block 0 {size} 0 {size} 0 {size*2}
+create_box 1 box
+create_atoms 1 box
+
+{pair_style}
+{pair_coeff}
+
+# Bulk energy reference
+minimize 1e-10 1e-10 1000 10000
+variable e_bulk equal pe
+variable n_bulk equal count(all)
+variable area equal lx*ly
+print "RESULT e_bulk ${{e_bulk}}"
+print "RESULT n_bulk ${{n_bulk}}"
+print "RESULT area ${{area}}"
+
+# Create free surface by deleting top half
+region top block INF INF INF INF {size} INF
+delete_atoms region top
+minimize 1e-10 1e-10 1000 10000
+variable e_slab equal pe
+variable n_slab equal count(all)
+print "RESULT e_slab ${{e_slab}}"
+print "RESULT n_slab ${{n_slab}}"
+"""
 
 # ── Result parsing ──────────────────────────────────────────────────
 
@@ -273,13 +365,21 @@ class LAMMPSRunner:
         potential_meta: dict,
         lammps_bin: str | None = None,
         potential_dir: str = "/tmp/lammps-potentials",
+        structure: str | None = None,
     ):
         self.meta = potential_meta
         self.settings = get_settings()
         self.lammps_bin = lammps_bin or getattr(self.settings, "LAMMPS_BIN", "lmp_serial")
         self.potential_dir = potential_dir
         self.elements = potential_meta.get("elements", [])
-        self.structure = "bcc"  # Default
+        # Structure detection: explicit arg > meta.structure > meta.phase > meta.lammps_config.structure > "bcc"
+        self.structure = (
+            structure
+            or potential_meta.get("structure")
+            or potential_meta.get("phase")
+            or (potential_meta.get("lammps_config") or {}).get("structure")
+            or "bcc"
+        )
 
     def _resolve_pot_file(self) -> str | None:
         """Find the potential file on disk."""
@@ -350,7 +450,7 @@ class LAMMPSRunner:
         element = self.elements[0] if self.elements else "U"
         guess = 3.4
         # Check reference for a better guess
-        ref_lc = _get_ref_value(element, "BCC", "lattice_constant")
+        ref_lc = _get_ref_value(element, self.structure, "lattice_constant")
         if ref_lc is not None:
             guess = ref_lc
 
@@ -363,14 +463,14 @@ class LAMMPSRunner:
             results = {}
             if "lattice_constant" in parsed:
                 v = parsed["lattice_constant"]
-                ref_v = _get_ref_value(element, "BCC", "lattice_constant")
+                ref_v = _get_ref_value(element, self.structure, "lattice_constant")
                 g = _grade_property(v, ref_v)
                 results["lattice_constant"] = {
                     "value": v, "unit": "angstrom", "reference": ref_v, **g,
                 }
             if "cohesive_energy" in parsed:
                 v = parsed["cohesive_energy"]
-                ref_v = _get_ref_value(element, "BCC", "cohesive_energy")
+                ref_v = _get_ref_value(element, self.structure, "cohesive_energy")
                 g = _grade_property(v, ref_v)
                 results["cohesive_energy"] = {
                     "value": v, "unit": "eV/atom", "reference": ref_v, **g,
@@ -402,9 +502,9 @@ class LAMMPSRunner:
             C44 = (e_shear - e0) / (eps ** 2 * vol) * conv if vol else 0
 
             # Grade individual constants
-            ref_c11 = _get_ref_value(element, "BCC", "C11")
-            ref_c12 = _get_ref_value(element, "BCC", "C12")
-            ref_c44 = _get_ref_value(element, "BCC", "C44")
+            ref_c11 = _get_ref_value(element, self.structure, "C11")
+            ref_c12 = _get_ref_value(element, self.structure, "C12")
+            ref_c44 = _get_ref_value(element, self.structure, "C44")
 
             result = {
                 "value": {
@@ -447,9 +547,36 @@ class LAMMPSRunner:
             output = await self._run_lammps(script)
             parsed = _parse_lammps_output(output)
             evf = parsed.get("vacancy_formation_energy")
-            result = {"value": evf, "unit": "eV"}
+            ref_evf = _get_ref_value(element, self.structure, "vacancy_formation_energy")
+            g = _grade_property(evf, ref_evf) if evf is not None else {"grade": None, "absolute_error": None, "relative_error": None}
+            result = {"value": evf, "unit": "eV", "reference": ref_evf, **g}
             if progress_callback:
                 await progress_callback(1.0, "vacancy_formation_energy done")
+            return result
+
+        elif prop_name == "surface_energy":
+            script = _generate_surface_energy_input(
+                self.elements, pair_style, pair_coeff, guess, self.structure, size=4
+            )
+            output = await self._run_lammps(script)
+            parsed = _parse_lammps_output(output)
+            e_bulk = parsed.get("e_bulk", 0)
+            e_slab = parsed.get("e_slab", 0)
+            n_bulk = parsed.get("n_bulk", 1)
+            n_slab = parsed.get("n_slab", 1)
+            area = parsed.get("area", 1)
+            # Surface energy: gamma = (E_slab - N_slab/N_bulk * E_bulk) / (2 * A)
+            # Convert eV/A^2 to J/m^2: multiply by 16.0218
+            if area > 0 and n_bulk > 0:
+                gamma_ev = (e_slab - n_slab / n_bulk * e_bulk) / (2 * area)
+                gamma_jm2 = gamma_ev * 16.0218
+            else:
+                gamma_jm2 = None
+            ref_se = _get_ref_value(element, self.structure, "surface_energy")
+            g = _grade_property(gamma_jm2, ref_se) if gamma_jm2 is not None else {"grade": None}
+            result = {"value": round(gamma_jm2, 4) if gamma_jm2 else None, "unit": "J/m²", "reference": ref_se, **g}
+            if progress_callback:
+                await progress_callback(1.0, "surface_energy done")
             return result
 
         else:

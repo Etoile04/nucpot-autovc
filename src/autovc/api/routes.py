@@ -232,6 +232,7 @@ class SupabaseVerifyRequest(BaseModel):
     potential_id: str = Field(..., description="UUID of the potential in Supabase")
     template: str = Field(default="basic", description="Template: basic|mechanical|defect|comprehensive")
     triggered_by: str = Field(default="admin", description="Who triggered this verification")
+    structure: str | None = Field(default=None, description="Crystal structure: bcc/fcc/hcp/diamond. Auto-detected if omitted.")
 
 
 TEMPLATE_ESTIMATED_SECONDS = {
@@ -242,7 +243,7 @@ TEMPLATE_ESTIMATED_SECONDS = {
 }
 
 
-async def _run_lammps_verification(job_id: str, potential_id: str, template: str):
+async def _run_lammps_verification(job_id: str, potential_id: str, template: str, structure: str | None = None):
     """Background task: run LAMMPS verification and update Supabase."""
     try:
         from autovc.runners.lammps_runner import LAMMPSRunner
@@ -260,7 +261,7 @@ async def _run_lammps_verification(job_id: str, potential_id: str, template: str
             except Exception as e:
                 logger.warning(f"Progress update failed: {e}")
 
-        runner = LAMMPSRunner(potential_meta=meta)
+        runner = LAMMPSRunner(potential_meta=meta, structure=structure)
         result = await runner.run_template(template, progress_callback=progress_callback)
 
         await update_verification(job_id, {
@@ -332,7 +333,7 @@ async def submit_supabase_verify(body: SupabaseVerifyRequest):
 
     # Start background LAMMPS task
     estimated = TEMPLATE_ESTIMATED_SECONDS.get(body.template, 120)
-    asyncio.create_task(_run_lammps_verification(job_id, body.potential_id, body.template))
+    asyncio.create_task(_run_lammps_verification(job_id, body.potential_id, body.template, body.structure))
 
     return {
         "job_id": job_id,
