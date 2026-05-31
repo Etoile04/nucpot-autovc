@@ -178,63 +178,16 @@ def submit_verification_v2(body: ParameterizedVerificationRequest, db: Session =
 # ── Verification Report (Phase 2) ─────────────────────────────────
 @router.get("/verification/{jid}/report", response_model=ScoreReport)
 def get_verification_report(jid: int, db: Session = Depends(get_db)):
-    """Get a structured scoring report for a verification job."""
-    job = db.query(VerificationJob).filter(VerificationJob.id == jid).first()
-    if not job:
-        raise HTTPException(404, "Not found")
-
-    property_scores = []
-    grades = []
-    for result in job.results:
-        score_entry = {
-            "property_name": result.property_name,
-            "computed_value": result.computed_value,
-            "reference_value": result.reference_value,
-            "unit": result.unit,
-            "grade": result.grade,
-            "absolute_error": result.absolute_error,
-            "relative_error": result.relative_error,
-        }
-        property_scores.append(score_entry)
-        if result.grade:
-            grades.append(result.grade)
-
-    overall = compute_overall_grade(grades)
-
-    passed = sum(1 for g in grades if g in ("A", "B"))
-    total = len(grades)
-    summary = f"{passed}/{total} properties passed (grade A or B). Overall grade: {overall or 'N/A'}"
-
-    pot = db.query(Potential).filter(Potential.id == job.potential_id).first()
-    potential_name = pot.name if pot else "unknown"
-
-    return ScoreReport(
-        job_id=job.id,
-        potential_name=potential_name,
-        overall_grade=overall,
-        property_scores=property_scores,
-        summary=summary,
-        created_at=job.completed_at,
-    )
-
-
-
-# ── Export ────────────────────────────────────────────────────────
-
-import io
-
-@router.get("/verification/{jid}/export")
-def export_verification_report(jid: int, format: str = "json", db: Session = Depends(get_db)):
-    """Export verification report as JSON or PDF.
+    """Get a structured scoring report for a verification job.
     
-    Supports both local SQLite (by numeric ID) and Supabase (by string job_id).
+    Tries local SQLite first, falls back to Supabase (async → sync via run).
     """
-    # Try local DB first
+    # Try local DB
     try:
         job = db.query(VerificationJob).filter(VerificationJob.id == jid).first()
     except Exception:
         job = None
-    
+
     if job:
         property_scores = []
         grades = []
@@ -251,15 +204,168 @@ def export_verification_report(jid: int, format: str = "json", db: Session = Dep
             property_scores.append(score_entry)
             if result.grade:
                 grades.append(result.grade)
+        overall = compute_overall_grade(grades)
+        pot = db.query(Potential).filter(Potential.id == job.potential_id).first()
+        potential_name = pot.name if pot else "unknown"
+        passed = sum(1 for g in grades if g in ("A", "B"))
+        summary = f"{passed}/{len(grades)} properties passed (grade A or B). Overall grade: {overall or 'N/A'}"
+        return ScoreReport(
+            job_id=job.id,
+            potential_name=potential_name,
+            overall_grade=overall,
+            property_scores=property_scores,
+            summary=summary,
+            created_at=job.completed_at,
+        )
 
+    # Fallback: try Supabase by string UUID
+    import asyncio as _aio
+    record = None
+    try:
+        try:
+            loop = _aio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    record = pool.submit(
+                        _aio.run, get_supabase_verification(str(jid))
+                    ).result()
+            else:
+                record = loop.run_until_complete(get_supabase_verification(str(jid)))
+        except RuntimeError:
+            record = _aio.new_event_loop().run_until_complete(get_supabase_verification(str(jid)))
+    except Exception:
+        record = None
+    if not record:
+        raise HTTPException(404, "Not found")
+
+    # Parse Supabase results (stored as JSONB)
+    results_data = record.get("results", {})
+    if isinstance(results_data, str):
+        import json
+        results_data = json.loads(results_data)
+
+    property_scores = []
+    grades = []
+    if isinstance(results_data, dict):
+        for prop_name, prop_data in results_data.items():
+            if isinstance(prop_data, dict):
+                score_entry = {
+                    "property_name": prop_name,
+                    "computed_value": prop_data.get("value"),
+                    "reference_value": prop_data.get("reference"),
+                    "unit": prop_data.get("unit", ""),
+                    "grade": prop_data.get("grade"),
+                    "absolute_error": prop_data.get("absolute_error"),
+                    "relative_error": prop_data.get("relative_error"),
+                }
+                property_scores.append(score_entry)
+                if prop_data.get("grade"):
+                    grades.append(prop_data["grade"])
+
+    overall = record.get("overall_grade") or compute_overall_grade(grades)
+    if not overall and grades:
+        overall = compute_overall_grade(grades)
+
+    passed = sum(1 for g in grades if g in ("A", "B"))
+    total = len(grades)
+    summary = record.get("summary") or f"{passed}/{total} properties passed (grade A or B). Overall grade: {overall or 'N/A'}"
+
+    return ScoreReport(
+        job_id=0,
+        potential_name=record.get("potential_id", "unknown")[:12],
+        overall_grade=overall,
+        property_scores=property_scores,
+        summary=summary,
+        created_at=record.get("completed_at"),
+    )
+
+
+
+# ── Export ────────────────────────────────────────────────────────
+
+import io
+
+@router.get("/verification/{jid}/export")
+def export_verification_report(jid: int, format: str = "json", db: Session = Depends(get_db)):
+    """Export verification report as JSON or PDF.
+    
+    Supports both local SQLite (by numeric ID) and Supabase (by UUID string).
+    """
+    # Try local DB first
+    try:
+        job = db.query(VerificationJob).filter(VerificationJob.id == jid).first()
+    except Exception:
+        job = None
+
+    if job:
+        property_scores = []
+        grades = []
+        for result in job.results:
+            score_entry = {
+                "property_name": result.property_name,
+                "computed_value": result.computed_value,
+                "reference_value": result.reference_value,
+                "unit": result.unit,
+                "grade": result.grade,
+                "absolute_error": result.absolute_error,
+                "relative_error": result.relative_error,
+            }
+            property_scores.append(score_entry)
+            if result.grade:
+                grades.append(result.grade)
         overall = compute_overall_grade(grades)
         pot = db.query(Potential).filter(Potential.id == job.potential_id).first()
         potential_name = pot.name if pot else "unknown"
         completed_at = job.completed_at
-        template = None
-        structure = None
     else:
-        raise HTTPException(404, f"Verification job {jid} not found")
+        # Fallback to Supabase
+        import asyncio as _aio
+        record = None
+        try:
+            try:
+                loop = _aio.get_event_loop()
+                if loop.is_running():
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        record = pool.submit(
+                            _aio.run, get_supabase_verification(str(jid))
+                        ).result()
+                else:
+                    record = loop.run_until_complete(get_supabase_verification(str(jid)))
+            except RuntimeError:
+                record = _aio.new_event_loop().run_until_complete(get_supabase_verification(str(jid)))
+        except Exception:
+            record = None
+        if not record:
+            raise HTTPException(404, f"Verification job {jid} not found")
+        # Parse results
+        results_data = record.get("results", {})
+        if isinstance(results_data, str):
+            import json
+            results_data = json.loads(results_data)
+        property_scores = []
+        grades = []
+        if isinstance(results_data, dict):
+            for prop_name, prop_data in results_data.items():
+                if isinstance(prop_data, dict):
+                    score_entry = {
+                        "property_name": prop_name,
+                        "computed_value": prop_data.get("value"),
+                        "reference_value": prop_data.get("reference"),
+                        "unit": prop_data.get("unit", ""),
+                        "grade": prop_data.get("grade"),
+                        "absolute_error": prop_data.get("absolute_error"),
+                        "relative_error": prop_data.get("relative_error"),
+                    }
+                    property_scores.append(score_entry)
+                    if prop_data.get("grade"):
+                        grades.append(prop_data["grade"])
+        overall = record.get("overall_grade") or compute_overall_grade(grades)
+        potential_name = record.get("potential_id", "unknown")[:12]
+        completed_at_str = record.get("completed_at")
+        from datetime import datetime as _dt
+        completed_at = _dt.fromisoformat(completed_at_str.replace("Z", "+00:00")) if completed_at_str else None
 
     if format == "pdf":
         return _generate_pdf(jid, potential_name, overall, property_scores, grades, completed_at)
@@ -297,6 +403,7 @@ def _grade_color(grade: str | None) -> tuple:
 
 def _generate_pdf(jid, potential_name, overall, property_scores, grades, completed_at):
     """Generate PDF report using fpdf2."""
+    from fpdf import FPDF
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -377,7 +484,7 @@ def _generate_pdf(jid, potential_name, overall, property_scores, grades, complet
 
 import asyncio
 from pydantic import BaseModel, Field
-from fpdf import FPDF
+# fpdf imported lazily in _generate_pdf
 from autovc.supabase_client import get_potential, create_verification, update_verification, get_verification as get_supabase_verification
 
 
