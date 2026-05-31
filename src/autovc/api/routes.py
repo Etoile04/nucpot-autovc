@@ -218,12 +218,166 @@ def get_verification_report(jid: int, db: Session = Depends(get_db)):
     )
 
 
+
+# ── Export ────────────────────────────────────────────────────────
+
+import io
+
+@router.get("/verification/{jid}/export")
+def export_verification_report(jid: int, format: str = "json", db: Session = Depends(get_db)):
+    """Export verification report as JSON or PDF.
+    
+    Supports both local SQLite (by numeric ID) and Supabase (by string job_id).
+    """
+    # Try local DB first
+    try:
+        job = db.query(VerificationJob).filter(VerificationJob.id == jid).first()
+    except Exception:
+        job = None
+    
+    if job:
+        property_scores = []
+        grades = []
+        for result in job.results:
+            score_entry = {
+                "property_name": result.property_name,
+                "computed_value": result.computed_value,
+                "reference_value": result.reference_value,
+                "unit": result.unit,
+                "grade": result.grade,
+                "absolute_error": result.absolute_error,
+                "relative_error": result.relative_error,
+            }
+            property_scores.append(score_entry)
+            if result.grade:
+                grades.append(result.grade)
+
+        overall = compute_overall_grade(grades)
+        pot = db.query(Potential).filter(Potential.id == job.potential_id).first()
+        potential_name = pot.name if pot else "unknown"
+        completed_at = job.completed_at
+        template = None
+        structure = None
+    else:
+        raise HTTPException(404, f"Verification job {jid} not found")
+
+    if format == "pdf":
+        return _generate_pdf(jid, potential_name, overall, property_scores, grades, completed_at)
+    else:
+        # JSON export with full metadata
+        from datetime import datetime
+        report = {
+            "job_id": jid,
+            "potential_name": potential_name,
+            "potential_id": job.potential_id if job else None,
+            "overall_grade": overall,
+            "property_scores": property_scores,
+            "summary": f"{sum(1 for g in grades if g in ('A','B'))}/{len(grades)} passed (A/B)",
+            "created_at": completed_at.isoformat() if completed_at else None,
+            "exported_at": datetime.utcnow().isoformat(),
+        }
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content=report,
+            headers={"Content-Disposition": f"attachment; filename=report_{jid}.json"},
+        )
+
+
+def _grade_color(grade: str | None) -> tuple:
+    """Return RGB color tuple for grade."""
+    colors = {
+        "A": (34, 197, 94),    # green
+        "B": (59, 130, 246),   # blue
+        "C": (234, 179, 8),    # yellow
+        "D": (249, 115, 22),   # orange
+        "F": (239, 68, 68),    # red
+    }
+    return colors.get(grade, (156, 163, 175))  # gray for None
+
+
+def _generate_pdf(jid, potential_name, overall, property_scores, grades, completed_at):
+    """Generate PDF report using fpdf2."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # Title
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.cell(0, 12, "Verification Report", ln=True, align="C")
+    pdf.ln(4)
+
+    # Metadata
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, f"Job ID: {jid}", ln=True)
+    pdf.cell(0, 6, f"Potential: {potential_name}", ln=True)
+    pdf.cell(0, 6, f"Overall Grade: {overall or 'N/A'}", ln=True)
+    if completed_at:
+        pdf.cell(0, 6, f"Completed: {completed_at.strftime('%Y-%m-%d %H:%M UTC')}", ln=True)
+    pdf.ln(6)
+
+    # Summary
+    passed = sum(1 for g in grades if g in ("A", "B"))
+    total = len(grades)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, f"Summary: {passed}/{total} properties passed (grade A or B)", ln=True)
+    pdf.ln(4)
+
+    # Property scores table
+    if not property_scores:
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(0, 8, "No property scores available.", ln=True)
+    else:
+        # Table header
+        col_widths = [45, 30, 30, 20, 20, 22]
+        headers = ["Property", "Computed", "Reference", "Unit", "Grade", "Rel.Error"]
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_fill_color(55, 65, 81)  # dark header
+        pdf.set_text_color(255, 255, 255)
+        for i, h in enumerate(headers):
+            pdf.cell(col_widths[i], 7, h, border=1, fill=True, align="C")
+        pdf.ln()
+
+        # Table rows
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Helvetica", "", 9)
+        for idx, s in enumerate(property_scores):
+            if idx % 2 == 0:
+                pdf.set_fill_color(243, 244, 246)
+            else:
+                pdf.set_fill_color(255, 255, 255)
+
+            row_data = [
+                str(s.get("property_name", ""))[:20],
+                f'{s.get("computed_value", "-"):.4f}' if isinstance(s.get("computed_value"), (int, float)) else str(s.get("computed_value", "-"))[:12],
+                f'{s.get("reference_value", "-"):.4f}' if isinstance(s.get("reference_value"), (int, float)) else str(s.get("reference_value", "-"))[:12],
+                str(s.get("unit", ""))[:8],
+                str(s.get("grade", "-"))[:3],
+                f'{s.get("relative_error", 0)*100:.1f}%' if isinstance(s.get("relative_error"), (int, float)) else "-",
+            ]
+            for i, val in enumerate(row_data):
+                pdf.cell(col_widths[i], 6, val, border=1, fill=True, align="C")
+            pdf.ln()
+
+    # Footer
+    pdf.ln(8)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.cell(0, 6, "Generated by nucpot-autovc", ln=True, align="C")
+
+    buf = io.BytesIO(pdf.output())
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=report_{jid}.pdf"},
+    )
+
 # ══════════════════════════════════════════════════════════════════
 # ── NEW: Supabase + LAMMPS Verification ───────────────────────────
 # ══════════════════════════════════════════════════════════════════
 
 import asyncio
 from pydantic import BaseModel, Field
+from fpdf import FPDF
 from autovc.supabase_client import get_potential, create_verification, update_verification, get_verification as get_supabase_verification
 
 
