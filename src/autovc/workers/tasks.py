@@ -18,7 +18,8 @@ def _execute_verification(job_id: int, session) -> None:
     calc = PropertyCalculator()
     potential = job.potential
     species = potential.species[0] if potential.species else "U"
-    structure = "BCC"
+    structure = getattr(job, "structure", "bcc") or "bcc"
+    structure = structure.upper() if len(structure) <= 3 else structure
     model_id = potential.kim_model_id or potential.name
     for prop_name in job.properties_requested:
         try:

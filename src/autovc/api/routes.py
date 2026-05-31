@@ -158,6 +158,7 @@ def submit_verification_v2(body: ParameterizedVerificationRequest, db: Session =
         potential_id=pot.id,
         status="pending",
         properties_requested=properties,
+        structure=body.structure.lower() if body.structure else "bcc",
     )
     db.add(job)
     db.commit()

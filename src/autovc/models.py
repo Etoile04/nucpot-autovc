@@ -21,6 +21,7 @@ class VerificationJob(Base):
     potential_id: Mapped[int] = mapped_column(ForeignKey("potentials.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending")
     properties_requested: Mapped[list] = mapped_column(JSON, nullable=False)
+    structure: Mapped[str] = mapped_column(String(16), default="bcc")
     celery_task_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
