@@ -364,13 +364,13 @@ class LAMMPSRunner:
         self,
         potential_meta: dict,
         lammps_bin: str | None = None,
-        potential_dir: str = "/tmp/lammps-potentials",
+        potential_dir: str | None = None,
         structure: str | None = None,
     ):
         self.meta = potential_meta
         self.settings = get_settings()
         self.lammps_bin = lammps_bin or getattr(self.settings, "LAMMPS_BIN", "lmp_serial")
-        self.potential_dir = potential_dir
+        self.potential_dir = potential_dir or os.environ.get("POTENTIAL_DIR", "/app/uploads")
         self.elements = potential_meta.get("elements", [])
         # Structure detection: explicit arg > meta.structure > meta.phase > meta.lammps_config.structure > "bcc"
         self.structure = (
@@ -382,45 +382,86 @@ class LAMMPSRunner:
         )
 
     def _resolve_pot_file(self) -> str | None:
-        """Find the potential file on disk."""
+        """Find the potential file on disk using multiple strategies."""
         cfg = self.meta.get("lammps_config") or {}
+
+        # Strategy 1: explicit pot_file in config
         pot_file = cfg.get("pot_file", "")
         if pot_file and os.path.isfile(pot_file):
             return pot_file
-        # Try potential_dir
+
+        # Strategy 2: extract filename from pair_coeff string
+        pair_coeff = cfg.get("pair_coeff", "")
+        if pair_coeff:
+            parts = pair_coeff.split()
+            for part in parts:
+                if "." in part and not part.startswith("*") and not part.startswith("map"):
+                    candidate = os.path.join(self.potential_dir, part)
+                    if os.path.isfile(candidate):
+                        return candidate
+
+        # Strategy 3: download from file_url (Supabase storage)
+        file_url = self.meta.get("file_url", "")
+        if file_url:
+            import httpx
+            if file_url.startswith("/"):
+                from autovc.config import get_settings
+                settings = get_settings()
+                base_url = settings.SUPABASE_URL.rstrip("/")
+                file_url = f"{base_url}{file_url}"
+            fname = file_url.split("/")[-1]
+            local_path = os.path.join(self.potential_dir, fname)
+            if os.path.isfile(local_path):
+                return local_path
+            try:
+                resp = httpx.get(file_url, follow_redirects=True, timeout=60)
+                if resp.status_code == 200:
+                    with open(local_path, "wb") as f:
+                        f.write(resp.content)
+                    return local_path
+            except Exception as e:
+                logger.warning(f"Failed to download {file_url}: {e}")
+
+        # Strategy 4: try matching by name
         name = self.meta.get("name", "")
-        for ext in [".eam.alloy", ".eam", ".meam", ".fs.eam", ""]:
+        for ext in [".eam.alloy", ".eam", ".meam", ".fs.eam", ".eam.fs", ".mtp", ".pb", ".pth", ""]:
             path = os.path.join(self.potential_dir, f"{name}{ext}")
             if os.path.isfile(path):
                 return path
-        # Try any file in potential_dir
+
+        # Strategy 5: fuzzy match by elements
         if os.path.isdir(self.potential_dir):
-            files = os.listdir(self.potential_dir)
-            if files:
-                return os.path.join(self.potential_dir, files[0])
+            elements = self.meta.get("elements", [])
+            if elements:
+                elem_str = "-".join(elements)
+                for fname in os.listdir(self.potential_dir):
+                    if elem_str in fname:
+                        return os.path.join(self.potential_dir, fname)
+
         return None
 
     def _get_pair_config(self, pot_file: str) -> tuple[str, str]:
         """Get pair_style and pair_coeff with resolved pot_file path."""
         cfg = self.meta.get("lammps_config") or {}
-        element = self.elements[0] if self.elements else "U"
+        all_elements = " ".join(self.elements) if self.elements else "U"
 
         pair_style = cfg.get("pair_style", "eam/alloy")
         if "eam" in pair_style.lower():
-            pair_coeff = f"pair_coeff * * {pot_file} {element}"
+            pair_coeff = f"pair_coeff * * {pot_file} {all_elements}"
         elif "meam" in pair_style.lower():
-            pair_coeff = f"pair_coeff * * {pot_file} {element} {element}"
+            pair_coeff = f"pair_coeff * * {pot_file} {all_elements} {all_elements}"
         else:
-            pair_coeff = f"pair_coeff * * {pot_file} {element}"
+            pair_coeff = f"pair_coeff * * {pot_file} {all_elements}"
         return f"pair_style {pair_style}", pair_coeff
 
     async def _run_lammps(self, input_script: str) -> str:
-        """Run LAMMPS with given input script, return stdout."""
+        """Run LAMMPS with given input script, return combined output (stdout + log)."""
         with tempfile.TemporaryDirectory(prefix="lammps_") as tmpdir:
             input_path = os.path.join(tmpdir, "in.lammps")
             with open(input_path, "w") as f:
                 f.write(input_script)
-            cmd = f"{self.lammps_bin} -in {input_path} -screen none -log {tmpdir}/log.lammps"
+            log_path = os.path.join(tmpdir, "log.lammps")
+            cmd = f"{self.lammps_bin} -in {input_path} -screen none -log {log_path}"
             proc = await asyncio.create_subprocess_shell(
                 cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -428,12 +469,21 @@ class LAMMPSRunner:
                 cwd=tmpdir,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
-            if proc.returncode != 0:
-                raise RuntimeError(
-                    f"LAMMPS failed (rc={proc.returncode}): {stderr.decode()[-500:]}"
-                )
-            return stdout.decode()
 
+            # Read log file for RESULT lines (LAMMPS prints to log with -screen none)
+            log_output = ""
+            if os.path.isfile(log_path):
+                with open(log_path) as lf:
+                    log_output = lf.read()
+            combined = stdout.decode() + "\n" + log_output
+
+            if proc.returncode != 0:
+                error_lines = [l for l in log_output.split("\n") if "ERROR" in l]
+                error_detail = error_lines[-1] if error_lines else stderr.decode()[-500:]
+                raise RuntimeError(
+                    f"LAMMPS failed (rc={proc.returncode}): {error_detail}"
+                )
+            return combined
     async def run_property(
         self,
         prop_name: str,
@@ -447,6 +497,7 @@ class LAMMPSRunner:
             )
 
         pair_style, pair_coeff = self._get_pair_config(pot_file)
+        all_elements = " ".join(self.elements) if self.elements else "U"
         element = self.elements[0] if self.elements else "U"
         guess = 3.4
         # Check reference for a better guess

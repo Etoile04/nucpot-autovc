@@ -518,7 +518,7 @@ async def _run_lammps_verification(job_id: str, potential_id: str, template: str
                     "progress": progress,
                     "current_step": step,
                     "status": "running",
-                    "partial_results": partial_results or {},
+                    
                 })
             except Exception as e:
                 logger.warning(f"Progress update failed: {e}")
