@@ -161,6 +161,17 @@ print "RESULT total_energy ${{pe}}"
 """
 
 
+def _multi_element_box_block(elements: list[str], MASSES: dict) -> str:
+    """Generate create_box + mass + create_atoms for multi-element support."""
+    n_types = len(elements)
+    if n_types <= 1:
+        return "create_box 1 box\ncreate_atoms 1 box"
+    mass_lines = "\n".join(
+        f"mass {i+1} {MASSES.get(elements[i], 100.0)}" for i in range(n_types)
+    )
+    return f"create_box {n_types} box\n{mass_lines}\ncreate_atoms 1 box"
+
+
 def _generate_elastic_input(
     elements: list[str],
     pair_style: str,
@@ -182,6 +193,22 @@ def _generate_elastic_input(
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
         plugin_load = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.so\n" if is_dp else ""
+
+    MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
+              "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
+              "Ni": 58.69, "Cu": 63.55, "Al": 26.98, "O": 16.00, "H": 1.008,
+              "He": 4.003, "Sn": 118.71}
+    n_types = len(elements)
+    box_block = _multi_element_box_block(elements, MASSES)
+
+    def _clear_block() -> str:
+        lines = ["clear", lattice_line, f"region box block 0 {size} 0 {size} 0 {size}"]
+        lines.append(f"create_box {n_types if n_types > 0 else 1} box")
+        for i, e in enumerate(elements[:max(n_types, 1)], 1):
+            lines.append(f"mass {i} {MASSES.get(e, 100.0)}")
+        lines.extend(["create_atoms 1 box", pair_style, pair_coeff])
+        return "\n".join(lines)
+
     return f"""units metal
 dimension 3
 boundary p p p
@@ -189,8 +216,7 @@ atom_style atomic
 
 {lattice_line}
 region box block 0 {size} 0 {size} 0 {size}
-create_box 1 box
-create_atoms 1 box
+{box_block}
 
 {pair_style}
 {pair_coeff}
@@ -205,39 +231,21 @@ run 0
 variable eps equal 0.01
 
 # exx strain (for C11)
-clear
-{lattice_line}
-region box block 0 {size} 0 {size} 0 {size}
-create_box 1 box
-create_atoms 1 box
-{pair_style}
-{pair_coeff}
+{_clear_block()}
 change_box all x delta ${{eps}} ${{eps}} remap units box
 minimize 1e-10 1e-10 500 5000
 variable e_exx equal pe
 print "RESULT e_exx ${{e_exx}}"
 
 # eyy strain (for C12)
-clear
-{lattice_line}
-region box block 0 {size} 0 {size} 0 {size}
-create_box 1 box
-create_atoms 1 box
-{pair_style}
-{pair_coeff}
+{_clear_block()}
 change_box all y delta ${{eps}} ${{eps}} remap units box
 minimize 1e-10 1e-10 500 5000
 variable e_eyy equal pe
 print "RESULT e_eyy ${{e_eyy}}"
 
 # shear xy strain (for C44)
-clear
-{lattice_line}
-region box block 0 {size} 0 {size} 0 {size}
-create_box 1 box
-create_atoms 1 box
-{pair_style}
-{pair_coeff}
+{_clear_block()}
 change_box all xy delta ${{eps}} remap units box
 minimize 1e-10 1e-10 500 5000
 variable e_shear_xy equal pe
@@ -264,6 +272,11 @@ def _generate_vacancy_input(
         lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
+    MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
+              "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
+              "Ni": 58.69, "Cu": 63.55, "Al": 26.98, "O": 16.00, "H": 1.008,
+              "He": 4.003, "Sn": 118.71}
+    box_block = _multi_element_box_block(elements, MASSES)
     return f"""units metal
 dimension 3
 boundary p p p
@@ -271,8 +284,7 @@ atom_style atomic
 
 {lattice_line}
 region box block 0 {size} 0 {size} 0 {size}
-create_box 1 box
-create_atoms 1 box
+{box_block}
 
 {pair_style}
 {pair_coeff}
@@ -322,6 +334,12 @@ def _generate_surface_energy_input(
         lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
+
+    MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
+              "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
+              "Ni": 58.69, "Cu": 63.55, "Al": 26.98, "O": 16.00, "H": 1.008,
+              "He": 4.003, "Sn": 118.71}
+    box_block = _multi_element_box_block(elements, MASSES)
     
     return f"""units metal
 dimension 3
@@ -330,8 +348,7 @@ atom_style atomic
 
 {lattice_line}
 region box block 0 {size} 0 {size} 0 {size*2}
-create_box 1 box
-create_atoms 1 box
+{box_block}
 
 {pair_style}
 {pair_coeff}
