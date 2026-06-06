@@ -89,7 +89,9 @@ def _pair_style_config(lammps_config: dict | None, potential_type: str | None) -
 
     # Auto-detect from type
     ptype = (potential_type or "").lower()
-    if "meam" in ptype:
+    if "deepmd" in ptype or "dp" in ptype:
+        return "pair_style deepmd " + (pot_file or "model.pb"), "pair_coeff * *"
+    elif "meam" in ptype:
         return "pair_style meam", f"pair_coeff * * {pot_file} U U"
     elif "hybrid" in ptype:
         return f"pair_style hybrid/overlay {cfg.get('sub_styles', 'eam/alloy')}", f"pair_coeff * * {pot_file} U"
@@ -105,6 +107,7 @@ def _generate_lattice_input(
     guess_a: float = 3.4,
     structure: str = "bcc",
     size: int = 4,
+    is_dp: bool = False,
 ) -> str:
     """Generate LAMMPS input for lattice constant + cohesive energy."""
     element = elements[0] if elements else "U"
@@ -113,6 +116,24 @@ def _generate_lattice_input(
         lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
+    plugin_load = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.so\n" if is_dp else ""
+    n_types = len(elements)
+    MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
+              "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
+              "Ni": 58.69, "Cu": 63.55, "Al": 26.98, "O": 16.00, "H": 1.008,
+              "He": 4.003, "Sn": 118.71}
+    if n_types <= 1:
+        box_block = "create_box 1 box\ncreate_atoms 1 box"
+    else:
+        mass_lines = "\n".join(
+            f"mass {i+1} {MASSES.get(elements[i], 100.0)}" for i in range(n_types)
+        )
+        box_block = f"create_box {n_types} box\n{mass_lines}\ncreate_atoms 1 box"
+        # For DP multi-element: random type assignment (equiatomic approximation)
+        frac = 1.0 / n_types
+        for i in range(1, n_types):
+            remaining_frac = 1.0 - frac * i
+            box_block += f"\nset type {i} type/fraction {i+1} {1.0/n_types:.4f} {12345+i}"
     return f"""units metal
 dimension 3
 boundary p p p
@@ -120,13 +141,14 @@ atom_style atomic
 
 {lattice_line}
 region box block 0 {size} 0 {size} 0 {size}
-create_box 1 box
-create_atoms 1 box
+{box_block}
 
-{pair_style}
+{plugin_load}{pair_style}
 {pair_coeff}
 
+fix 1 all box/relax iso 0.0
 minimize 1e-10 1e-10 1000 10000
+unfix 1
 
 variable natom equal count(all)
 variable ecoh equal pe/v_natom
@@ -134,6 +156,7 @@ variable a equal lx/{size}
 
 print "RESULT lattice_constant ${{a}}"
 print "RESULT cohesive_energy ${{ecoh}}"
+variable pe equal pe
 print "RESULT total_energy ${{pe}}"
 """
 
@@ -142,6 +165,7 @@ def _generate_elastic_input(
     elements: list[str],
     pair_style: str,
     pair_coeff: str,
+    is_dp: bool = False,
     guess_a: float = 3.4,
     structure: str = "bcc",
     size: int = 3,
@@ -157,6 +181,7 @@ def _generate_elastic_input(
         lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
+        plugin_load = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.so\n" if is_dp else ""
     return f"""units metal
 dimension 3
 boundary p p p
@@ -281,6 +306,7 @@ def _generate_surface_energy_input(
     guess_a: float = 3.4,
     structure: str = "bcc",
     size: int = 4,
+    is_dp: bool = False,
 ) -> str:
     """Generate LAMMPS input for surface energy calculation.
     
@@ -369,7 +395,22 @@ class LAMMPSRunner:
     ):
         self.meta = potential_meta
         self.settings = get_settings()
-        self.lammps_bin = lammps_bin or getattr(self.settings, "LAMMPS_BIN", "lmp_serial")
+        # Auto-detect potential type and select appropriate LAMMPS binary
+        ptype_init = (potential_meta.get("type") or "").lower()
+        is_dp = "dp" in ptype_init or "deepmd" in ptype_init
+        is_meam = "meam" in ptype_init
+        if is_dp:
+            self.lammps_bin = lammps_bin or "/usr/local/bin/lmp-with-dp"
+            self._is_dp = True
+            self._is_meam = False
+        elif is_meam:
+            self.lammps_bin = lammps_bin or "/usr/local/bin/lmp-full"
+            self._is_dp = False
+            self._is_meam = True
+        else:
+            self.lammps_bin = lammps_bin or getattr(self.settings, "LAMMPS_BIN", "lmp_serial")
+            self._is_dp = False
+            self._is_meam = False
         self.potential_dir = potential_dir or os.environ.get("POTENTIAL_DIR", "/app/uploads")
         self.elements = potential_meta.get("elements", [])
         # Structure detection: explicit arg > meta.structure > meta.phase > meta.lammps_config.structure > "bcc"
@@ -446,7 +487,13 @@ class LAMMPSRunner:
         all_elements = " ".join(self.elements) if self.elements else "U"
 
         pair_style = cfg.get("pair_style", "eam/alloy")
-        if "eam" in pair_style.lower():
+        if "deepmd" in pair_style.lower():
+            # DP: pair_style deepmd /path/to/model.pb
+            return f"pair_style {pair_style} {pot_file}", "pair_coeff * *"
+        elif "mtp" in pair_style.lower():
+            # MTP: pair_style mtp /path/to/model.mtp
+            return f"pair_style {pair_style} {pot_file}", "pair_coeff * *"
+        elif "eam" in pair_style.lower():
             pair_coeff = f"pair_coeff * * {pot_file} {all_elements}"
         elif "meam" in pair_style.lower():
             pair_coeff = f"pair_coeff * * {pot_file} {all_elements} {all_elements}"
@@ -507,7 +554,7 @@ class LAMMPSRunner:
 
         if prop_name in ("lattice_constant", "cohesive_energy"):
             script = _generate_lattice_input(
-                self.elements, pair_style, pair_coeff, guess, self.structure
+                self.elements, pair_style, pair_coeff, guess, self.structure, is_dp=getattr(self, '_is_dp', False)
             )
             output = await self._run_lammps(script)
             parsed = _parse_lammps_output(output)
@@ -534,7 +581,7 @@ class LAMMPSRunner:
 
         elif prop_name == "elastic_constants":
             script = _generate_elastic_input(
-                self.elements, pair_style, pair_coeff, guess, self.structure, size=3
+                self.elements, pair_style, pair_coeff, guess, self.structure, size=3, is_dp=getattr(self, '_is_dp', False)
             )
             output = await self._run_lammps(script)
             parsed = _parse_lammps_output(output)
@@ -593,7 +640,7 @@ class LAMMPSRunner:
 
         elif prop_name == "vacancy_formation_energy":
             script = _generate_vacancy_input(
-                self.elements, pair_style, pair_coeff, guess, self.structure, size=3
+                self.elements, pair_style, pair_coeff, guess, self.structure, size=3, is_dp=getattr(self, '_is_dp', False)
             )
             output = await self._run_lammps(script)
             parsed = _parse_lammps_output(output)
