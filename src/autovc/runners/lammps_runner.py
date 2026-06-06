@@ -123,7 +123,9 @@ def _generate_lattice_input(
               "Ni": 58.69, "Cu": 63.55, "Al": 26.98, "O": 16.00, "H": 1.008,
               "He": 4.003, "Sn": 118.71}
     if n_types <= 1:
-        box_block = "create_box 1 box\ncreate_atoms 1 box"
+        el = elements[0] if elements else "U"
+        mass_line = f"mass 1 {MASSES.get(el, 100.0)}"
+        box_block = f"create_box 1 box\n{mass_line}\ncreate_atoms 1 box"
     else:
         mass_lines = "\n".join(
             f"mass {i+1} {MASSES.get(elements[i], 100.0)}" for i in range(n_types)
@@ -513,7 +515,33 @@ class LAMMPSRunner:
         elif "eam" in pair_style.lower():
             pair_coeff = f"pair_coeff * * {pot_file} {all_elements}"
         elif "meam" in pair_style.lower():
-            pair_coeff = f"pair_coeff * * {pot_file} {all_elements} {all_elements}"
+            # MEAM needs library.meam + specific.meam
+            # Check if file_url has two comma-separated files
+            file_url = self.meta.get("file_url", "") or ""
+            lib_file = None
+            spec_file = pot_file
+            if "," in file_url:
+                parts = [p.strip().split("/")[-1] for p in file_url.split(",")]
+                if len(parts) >= 2:
+                    lib_name = parts[0]
+                    spec_name = parts[1]
+                    lib_candidate = os.path.join(self.potential_dir, lib_name)
+                    spec_candidate = os.path.join(self.potential_dir, spec_name)
+                    if os.path.isfile(lib_candidate):
+                        lib_file = lib_candidate
+                    if os.path.isfile(spec_candidate):
+                        spec_file = spec_candidate
+            # Fallback: look for library-*.meam in potential_dir
+            if not lib_file:
+                pot_dir = self.potential_dir
+                for fn in os.listdir(pot_dir) if os.path.isdir(pot_dir) else []:
+                    if fn.startswith("library-") and fn.endswith(".meam"):
+                        lib_file = os.path.join(pot_dir, fn)
+                        break
+            if lib_file:
+                pair_coeff = f"pair_coeff * * {lib_file} {all_elements} {spec_file} {all_elements}"
+            else:
+                pair_coeff = f"pair_coeff * * {pot_file} {all_elements} {all_elements}"
         else:
             pair_coeff = f"pair_coeff * * {pot_file} {all_elements}"
         return f"pair_style {pair_style}", pair_coeff

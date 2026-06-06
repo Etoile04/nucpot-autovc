@@ -1,0 +1,12 @@
+{
+  "enabled": false,
+  "schedule_type": "interval",
+  "interval_hours": 24,
+  "cron_expression": "0 2 * * *",
+  "max_concurrent": 1,
+  "priority_filter": ["P2", "P3"],
+  "potential_types": ["eam", "eam/fs", "mtp"],
+  "dry_run": true,
+  "batch_size": 10,
+  "log_level": "INFO"
+}

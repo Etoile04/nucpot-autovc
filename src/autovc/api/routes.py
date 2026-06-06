@@ -486,7 +486,7 @@ def _generate_pdf(jid, potential_name, overall, property_scores, grades, complet
 import asyncio
 from pydantic import BaseModel, Field
 # fpdf imported lazily in _generate_pdf
-from autovc.supabase_client import get_potential, create_verification, update_verification, get_verification as get_supabase_verification
+from autovc.supabase_client import get_potential, create_verification, update_verification, update_potential, get_verification as get_supabase_verification
 
 
 class SupabaseVerifyRequest(BaseModel):
@@ -533,6 +533,14 @@ async def _run_lammps_verification(job_id: str, potential_id: str, template: str
             "results": result["results"],
             "overall_grade": result.get("overall_grade"),
         })
+
+        # Write back verified_props to potential record
+        try:
+            await update_potential(potential_id, {
+                "verified_props": result["results"],
+            })
+        except Exception as e:
+            logger.warning(f"Failed to update potential verified_props: {e}")
 
     except Exception as e:
         logger.error(f"LAMMPS verification failed for job {job_id}: {e}")

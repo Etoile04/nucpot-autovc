@@ -69,3 +69,15 @@ async def get_verification(verification_id: str) -> dict | None:
         resp.raise_for_status()
         data = resp.json()
         return data[0] if data else None
+
+async def update_potential(potential_id: str, updates: dict) -> dict:
+    """Update potential record in Supabase."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.patch(
+            f"{SUPABASE_URL}/rest/v1/potentials",
+            params={"id": f"eq.{potential_id}"},
+            json=updates,
+            headers={**_headers(), "Prefer": "return=representation"},
+        )
+        resp.raise_for_status()
+        return resp.json()
