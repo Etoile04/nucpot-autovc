@@ -16,8 +16,8 @@ class Settings(BaseSettings):
 
     # Supabase (for NucPot integration)
     SUPABASE_URL: str = ""
-    SUPABASE_ANON_KEY: str = ""
-    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_PUBLISHABLE_KEY: str = ""  # sb_publishable_... (safe for client-side)
+    SUPABASE_SECRET_KEY: str = ""       # sb_secret_... (backend only, bypasses RLS)
 
     # LAMMPS binary
     LAMMPS_BIN: str = os.environ.get("LAMMPS_BIN", "lmp_serial")

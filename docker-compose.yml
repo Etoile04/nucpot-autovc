@@ -11,8 +11,8 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - SUPABASE_URL=${SUPABASE_URL:-}
-      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      - SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY:-}
+      - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY:-}
     volumes:
       - autovc-data:/app/data
     depends_on:
@@ -23,13 +23,13 @@ services:
     build: .
     command: ["python", "-m", "celery", "-A", "autovc.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
     environment:
-      - DATABASE_URL=postgresql://nucpot:nucpot@nucpot-nucpot-db-1:5432/nucpot
+      - DATABASE_URL=postgresql://nucpot:nucpot@nucpot-db-1:5432/nucpot
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - SUPABASE_URL=${SUPABASE_URL:-}
-      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      - SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY:-}
+      - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY:-}
     volumes:
       - autovc-data:/app/data
     depends_on:

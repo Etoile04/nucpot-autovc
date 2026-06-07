@@ -97,7 +97,7 @@ pip install -e ".[dev]"
 
 ```bash
 cp .env.example .env
-# Edit .env — set DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY, etc.
+# Edit .env — set DATABASE_URL, SUPABASE_URL, SUPABASE_SECRET_KEY, etc.
 ```
 
 ### Run
@@ -197,8 +197,8 @@ Environment variables (set in `.env` or Docker environment):
 | `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Celery broker |
 | `CELERY_RESULT_BACKEND` | `redis://localhost:6379/0` | Celery result backend |
 | `SUPABASE_URL` | — | Supabase project URL |
-| `SUPABASE_ANON_KEY` | — | Supabase anonymous key |
-| `SUPABASE_SERVICE_ROLE_KEY` | — | Supabase service role key |
+| `SUPABASE_PUBLISHABLE_KEY` | — | Supabase publishable key (sb_publishable_..., safe for client-side) |
+| `SUPABASE_SECRET_KEY` | — | Supabase secret key (sb_secret_..., backend only, bypasses RLS) |
 | `LAMMPS_BIN` | `lmp_serial` | Path to LAMMPS executable |
 
 ---

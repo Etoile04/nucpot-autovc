@@ -49,7 +49,7 @@ def get_potentials(client: httpx.Client) -> list[dict]:
     # Direct Supabase query since API doesn't have list potentials
     import os
     url = os.environ.get("SUPABASE_URL", "")
-    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    key = os.environ.get("SUPABASE_SECRET_KEY", "")
     if not url or not key:
         # Load from .env
         env_file = Path(__file__).parent.parent / ".env"
@@ -57,11 +57,11 @@ def get_potentials(client: httpx.Client) -> list[dict]:
             for line in env_file.read_text().splitlines():
                 if line.startswith("SUPABASE_URL="):
                     url = line.split("=", 1)[1].strip()
-                elif line.startswith("SUPABASE_SERVICE_ROLE_KEY="):
+                elif line.startswith("SUPABASE_SECRET_KEY="):
                     key = line.split("=", 1)[1].strip()
 
     if not url or not key:
-        print("ERROR: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set")
+        print("ERROR: SUPABASE_URL or SUPABASE_SECRET_KEY not set")
         sys.exit(1)
 
     headers = {"apikey": key, "Authorization": f"Bearer {key}"}
