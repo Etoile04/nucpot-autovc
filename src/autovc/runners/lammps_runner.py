@@ -590,7 +590,7 @@ class LAMMPSRunner:
                         abs_path = os.path.join(self.potential_dir, part)
                         if os.path.isfile(abs_path):
                             parts[i] = abs_path
-                pair_coeff = " ".join(parts)
+                pair_coeff = "pair_coeff " + " ".join(parts)
             else:
                 # Fallback: auto-construct from file_url
                 file_url = self.meta.get("file_url", "") or ""
