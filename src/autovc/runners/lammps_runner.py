@@ -462,6 +462,7 @@ class LAMMPSRunner:
         ptype_init = (potential_meta.get("type") or "").lower()
         is_dp = "dp" in ptype_init or "deepmd" in ptype_init
         is_meam = "meam" in ptype_init
+        is_mtp = "mtp" in ptype_init
         if is_dp:
             self.lammps_bin = lammps_bin or "/usr/local/bin/lmp-with-dp"
             self._is_dp = True
@@ -470,6 +471,10 @@ class LAMMPSRunner:
             self.lammps_bin = lammps_bin or os.environ.get("LAMMPS_BIN_MEAM", "/app/lmp-full")
             self._is_dp = False
             self._is_meam = True
+        elif is_mtp:
+            self.lammps_bin = lammps_bin or os.environ.get("LAMMPS_BIN_MTP", "/app/lmp-2025")
+            self._is_dp = False
+            self._is_meam = False
         else:
             self.lammps_bin = lammps_bin or getattr(self.settings, "LAMMPS_BIN", "lmp_serial")
             self._is_dp = False
