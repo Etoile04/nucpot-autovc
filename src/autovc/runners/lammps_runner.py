@@ -467,7 +467,7 @@ class LAMMPSRunner:
             self._is_dp = True
             self._is_meam = False
         elif is_meam:
-            self.lammps_bin = lammps_bin or "/usr/local/bin/lmp-full"
+            self.lammps_bin = lammps_bin or os.environ.get("LAMMPS_BIN_MEAM", "/app/lmp-full")
             self._is_dp = False
             self._is_meam = True
         else:
@@ -505,26 +505,46 @@ class LAMMPSRunner:
                         return candidate
 
         # Strategy 3: download from file_url (Supabase storage)
+        # Supports comma-separated URLs for multi-file potentials (e.g., MEAM)
         file_url = self.meta.get("file_url", "")
         if file_url:
             import httpx
-            if file_url.startswith("/"):
-                from autovc.config import get_settings
-                settings = get_settings()
-                base_url = settings.SUPABASE_URL.rstrip("/")
-                file_url = f"{base_url}{file_url}"
-            fname = file_url.split("/")[-1]
-            local_path = os.path.join(self.potential_dir, fname)
-            if os.path.isfile(local_path):
-                return local_path
-            try:
-                resp = httpx.get(file_url, follow_redirects=True, timeout=60)
-                if resp.status_code == 200:
-                    with open(local_path, "wb") as f:
-                        f.write(resp.content)
-                    return local_path
-            except Exception as e:
-                logger.warning(f"Failed to download {file_url}: {e}")
+            urls = [u.strip() for u in file_url.split(",") if u.strip()]
+            for single_url in urls:
+                resolved = single_url
+                if resolved.startswith("/"):
+                    from autovc.config import get_settings
+                    settings = get_settings()
+                    base_url = settings.SUPABASE_URL.rstrip("/")
+                    resolved = f"{base_url}{resolved}"
+                fname = resolved.split("/")[-1]
+                local_path = os.path.join(self.potential_dir, fname)
+                if os.path.isfile(local_path):
+                    continue  # already downloaded
+                try:
+                    resp = httpx.get(resolved, follow_redirects=True, timeout=60)
+                    if resp.status_code == 200:
+                        with open(local_path, "wb") as f:
+                            f.write(resp.content)
+                        logger.info(f"Downloaded {fname} ({len(resp.content)} bytes)")
+                except Exception as e:
+                    logger.warning(f"Failed to download {resolved}: {e}")
+            # Return the primary pot_file if it's now on disk
+            cfg = self.meta.get("lammps_config") or {}
+            pot_file_name = cfg.get("pot_file", "")
+            if pot_file_name:
+                # pot_file might be absolute or relative
+                if os.path.isfile(pot_file_name):
+                    return pot_file_name
+                candidate = os.path.join(self.potential_dir, pot_file_name)
+                if os.path.isfile(candidate):
+                    return candidate
+            # Fallback: return first downloaded file
+            if urls:
+                first_fname = urls[0].split("/")[-1]
+                first_path = os.path.join(self.potential_dir, first_fname)
+                if os.path.isfile(first_path):
+                    return first_path
 
         # Strategy 4: try matching by name
         name = self.meta.get("name", "")
