@@ -580,32 +580,43 @@ class LAMMPSRunner:
             pair_coeff = f"pair_coeff * * {pot_file} {all_elements}"
         elif "meam" in pair_style.lower():
             # MEAM needs library.meam + specific.meam
-            # Check if file_url has two comma-separated files
-            file_url = self.meta.get("file_url", "") or ""
-            lib_file = None
-            spec_file = pot_file
-            if "," in file_url:
-                parts = [p.strip().split("/")[-1] for p in file_url.split(",")]
-                if len(parts) >= 2:
-                    lib_name = parts[0]
-                    spec_name = parts[1]
-                    lib_candidate = os.path.join(self.potential_dir, lib_name)
-                    spec_candidate = os.path.join(self.potential_dir, spec_name)
-                    if os.path.isfile(lib_candidate):
-                        lib_file = lib_candidate
-                    if os.path.isfile(spec_candidate):
-                        spec_file = spec_candidate
-            # Fallback: look for library-*.meam in potential_dir
-            if not lib_file:
-                pot_dir = self.potential_dir
-                for fn in os.listdir(pot_dir) if os.path.isdir(pot_dir) else []:
-                    if fn.startswith("library-") and fn.endswith(".meam"):
-                        lib_file = os.path.join(pot_dir, fn)
-                        break
-            if lib_file:
-                pair_coeff = f"pair_coeff * * {lib_file} {all_elements} {spec_file} {all_elements}"
+            # Use pair_coeff from config if available (author-specified format)
+            raw_pc = cfg.get("pair_coeff", "")
+            if raw_pc:
+                # Replace bare filenames with absolute paths from potential_dir
+                pair_coeff = raw_pc
+                # Extract all tokens that look like filenames (contain '.')
+                for token in raw_pc.split():
+                    if "." in token and not token.startswith("*"):
+                        abs_path = os.path.join(self.potential_dir, token)
+                        if os.path.isfile(abs_path):
+                            pair_coeff = pair_coeff.replace(token, abs_path)
             else:
-                pair_coeff = f"pair_coeff * * {pot_file} {all_elements} {all_elements}"
+                # Fallback: auto-construct from file_url
+                file_url = self.meta.get("file_url", "") or ""
+                lib_file = None
+                spec_file = pot_file
+                if "," in file_url:
+                    parts = [p.strip().split("/")[-1] for p in file_url.split(",")]
+                    if len(parts) >= 2:
+                        lib_name = parts[0]
+                        spec_name = parts[1]
+                        lib_candidate = os.path.join(self.potential_dir, lib_name)
+                        spec_candidate = os.path.join(self.potential_dir, spec_name)
+                        if os.path.isfile(lib_candidate):
+                            lib_file = lib_candidate
+                        if os.path.isfile(spec_candidate):
+                            spec_file = spec_candidate
+                if not lib_file:
+                    pot_dir = self.potential_dir
+                    for fn in os.listdir(pot_dir) if os.path.isdir(pot_dir) else []:
+                        if fn.startswith("library-") and fn.endswith(".meam"):
+                            lib_file = os.path.join(pot_dir, fn)
+                            break
+                if lib_file:
+                    pair_coeff = f"pair_coeff * * {lib_file} {all_elements} {spec_file} {all_elements}"
+                else:
+                    pair_coeff = f"pair_coeff * * {pot_file} {all_elements} {all_elements}"
         else:
             pair_coeff = f"pair_coeff * * {pot_file} {all_elements}"
         return f"pair_style {pair_style}", pair_coeff
