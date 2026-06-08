@@ -584,13 +584,15 @@ class LAMMPSRunner:
             raw_pc = cfg.get("pair_coeff", "")
             if raw_pc:
                 # Replace bare filenames with absolute paths from potential_dir
-                pair_coeff = raw_pc
-                # Extract all tokens that look like filenames (contain '.')
-                for token in raw_pc.split():
-                    if "." in token and not token.startswith("*"):
-                        abs_path = os.path.join(self.potential_dir, token)
+                # Use word-boundary approach to avoid partial replacements
+                tokens = [t for t in raw_pc.split() if "." in t and not t.startswith("*")]
+                parts = raw_pc.split()
+                for i, part in enumerate(parts):
+                    if "." in part and not part.startswith("*"):
+                        abs_path = os.path.join(self.potential_dir, part)
                         if os.path.isfile(abs_path):
-                            pair_coeff = pair_coeff.replace(token, abs_path)
+                            parts[i] = abs_path
+                pair_coeff = " ".join(parts)
             else:
                 # Fallback: auto-construct from file_url
                 file_url = self.meta.get("file_url", "") or ""
