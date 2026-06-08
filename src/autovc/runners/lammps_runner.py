@@ -576,8 +576,6 @@ class LAMMPSRunner:
         elif "mtp" in pair_style.lower():
             # MTP: pair_style mtp /path/to/model.mtp
             return f"pair_style {pair_style} {pot_file}", "pair_coeff * *"
-        elif "eam" in pair_style.lower():
-            pair_coeff = f"pair_coeff * * {pot_file} {all_elements}"
         elif "meam" in pair_style.lower():
             # MEAM needs library.meam + specific.meam
             # Use pair_coeff from config if available (author-specified format)
@@ -619,6 +617,8 @@ class LAMMPSRunner:
                     pair_coeff = f"pair_coeff * * {lib_file} {all_elements} {spec_file} {all_elements}"
                 else:
                     pair_coeff = f"pair_coeff * * {pot_file} {all_elements} {all_elements}"
+        elif "eam" in pair_style.lower():
+            pair_coeff = f"pair_coeff * * {pot_file} {all_elements}"
         else:
             pair_coeff = f"pair_coeff * * {pot_file} {all_elements}"
         return f"pair_style {pair_style}", pair_coeff
