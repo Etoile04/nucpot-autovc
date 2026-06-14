@@ -113,7 +113,7 @@ def _generate_lattice_input(
     element = elements[0] if elements else "U"
     lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
     if lammps_struct == "hcp":
-        lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
+        lattice_line = f"lattice {lammps_struct} {guess_a}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
     plugin_load = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.son" if is_dp else ""
@@ -280,7 +280,7 @@ def _generate_elastic_input(
     element = elements[0] if elements else "U"
     lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
     if lammps_struct == "hcp":
-        lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
+        lattice_line = f"lattice {lammps_struct} {guess_a}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
         plugin_load = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.son" if is_dp else ""
@@ -371,7 +371,7 @@ def _generate_vacancy_input(
     element = elements[0] if elements else "U"
     lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
     if lammps_struct == "hcp":
-        lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
+        lattice_line = f"lattice {lammps_struct} {guess_a}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
     MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
@@ -446,7 +446,7 @@ def _generate_surface_energy_input(
     
     if lammps_struct == "hcp":
         c_param = guess_a * HCP_IDEAL_CA
-        lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
+        lattice_line = f"lattice {lammps_struct} {guess_a}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
 
