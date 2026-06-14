@@ -116,7 +116,7 @@ def _generate_lattice_input(
         lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
-    plugin_load = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.so\n" if is_dp else ""
+    plugin_load = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.son" if is_dp else ""
     n_types = len(elements)
     MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
               "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
@@ -142,11 +142,11 @@ def _generate_lattice_input(
             f"mass {i+1} {MASSES.get(elements[i], 100.0)}" for i in range(n_types)
         )
         box_block = f"create_box {n_types} box\n{mass_lines}\ncreate_atoms 1 box"
-        # For DP multi-element: random type assignment (equiatomic approximation)
+        # Random solid solution: assign atom types by equiatomic fraction
+        # Uses set type/fraction for stochastic type reassignment
         frac = 1.0 / n_types
         for i in range(1, n_types):
-            remaining_frac = 1.0 - frac * i
-            box_block += f"\nset type {i} type/fraction {i+1} {1.0/n_types:.4f} {12345+i}"
+            box_block += f"\nset type {i} type/fraction {i+1} {frac:.4f} {12345+i}"
     return f"""units metal
 dimension 3
 boundary p p p
@@ -175,14 +175,92 @@ print "RESULT total_energy ${{pe}}"
 
 
 def _multi_element_box_block(elements: list[str], MASSES: dict) -> str:
-    """Generate create_box + mass + create_atoms for multi-element support."""
+    """Generate create_box + mass + create_atoms for multi-element support.
+
+    For multi-element systems (n_types > 1):
+    - Creates N atom types in the simulation box
+    - Initially fills all positions with type 1
+    - Uses set type/fraction for random solid solution (equiatomic)
+    - Each type gets ~1/N fraction of atoms
+    """
     n_types = len(elements)
     if n_types <= 1:
         return "create_box 1 box\ncreate_atoms 1 box"
     mass_lines = "\n".join(
         f"mass {i+1} {MASSES.get(elements[i], 100.0)}" for i in range(n_types)
     )
-    return f"create_box {n_types} box\n{mass_lines}\ncreate_atoms 1 box"
+    box_block = f"create_box {n_types} box\n{mass_lines}\ncreate_atoms 1 box"
+    # Random solid solution: stochastic type reassignment
+    frac = 1.0 / n_types
+    for i in range(1, n_types):
+        box_block += f"\nset type {i} type/fraction {i+1} {frac:.4f} {12345+i}"
+    return box_block
+
+
+
+_MASS = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
+         "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
+         "Ni": 58.69, "Cu": 63.55, "Al": 26.98, "O": 16.00, "H": 1.008,
+         "He": 4.003, "Sn": 118.71, "Ce": 140.12, "Ag": 107.87,
+         "In": 114.82, "Se": 78.96, "Si": 28.09, "C": 12.011}
+
+
+def _generate_basic_input(elements, pair_style, pair_coeff, guess_a, structure, size=3):
+    """Generate basic LAMMPS input for energy minimization (no strain)."""
+    lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
+    lattice_line = f"lattice {lammps_struct} {guess_a}"
+    n_types = len(elements)
+    lines = [
+        "units metal", "dimension 3", "boundary p p p", "atom_style atomic",
+        lattice_line,
+        f"region box block 0 {size} 0 {size} 0 {size}",
+        f"create_box {max(n_types, 1)} box",
+    ]
+    for i, e in enumerate(elements[:max(n_types, 1)], 1):
+        lines.append(f"mass {i} {_MASS.get(e, 100.0)}")
+    lines.extend([
+        "create_atoms 1 box", pair_style, pair_coeff,
+        "neigh_modify one 5000", "min_style cg",
+        "minimize 1e-12 1e-12 5000 50000",
+    ])
+    return chr(10).join(lines) + chr(10)
+
+
+def _generate_strained_input(elements, pair_style, pair_coeff, guess_a, structure,
+                             size=3, strain_x=0, strain_y=0, shear_xy=0):
+    """Generate LAMMPS input with applied strain."""
+    lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
+    lattice_line = f"lattice {lammps_struct} {guess_a}"
+    n_types = len(elements)
+    use_triclinic = shear_xy != 0
+    if use_triclinic:
+        region = f"region box prism 0 {size} 0 {size} 0 {size} 0 0 0"
+    else:
+        region = f"region box block 0 {size} 0 {size} 0 {size}"
+    lines = [
+        "units metal", "dimension 3", "boundary p p p", "atom_style atomic",
+        lattice_line, region,
+        f"create_box {max(n_types, 1)} box",
+    ]
+    for i, e in enumerate(elements[:max(n_types, 1)], 1):
+        lines.append(f"mass {i} {_MASS.get(e, 100.0)}")
+    lines.extend([
+        "create_atoms 1 box", pair_style, pair_coeff,
+        "neigh_modify one 5000", "min_style cg",
+        "minimize 1e-12 1e-12 5000 50000",
+    ])
+    if strain_x != 0:
+        lines.append(f"variable dx equal lx*{strain_x}")
+        lines.append("change_box all x delta 0 ${dx} remap units box")
+    if strain_y != 0:
+        lines.append(f"variable dy equal ly*{strain_y}")
+        lines.append("change_box all y delta 0 ${dy} remap units box")
+    if shear_xy != 0:
+        lines.append(f"variable dxy equal lx*{shear_xy}")
+        lines.append("change_box all xy delta ${dxy} remap units box")
+    lines.extend(["variable e equal pe", "variable v equal vol", "run 0",
+                   'print "RESULT e ${e}"', 'print "RESULT v ${v}"'])
+    return chr(10).join(lines) + chr(10)
 
 
 def _generate_elastic_input(
@@ -205,7 +283,7 @@ def _generate_elastic_input(
         lattice_line = f"lattice {lammps_struct} {guess_a} a1 1 0 0 a2 0 1 0 a3 0 0 {HCP_IDEAL_CA}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
-        plugin_load = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.so\n" if is_dp else ""
+        plugin_load = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.son" if is_dp else ""
 
     MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
               "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
@@ -332,7 +410,9 @@ print "RESULT e_perfect ${{e_perfect}}"
 print "RESULT natom ${{natom}}"
 
 # Create vacancy by removing atom 1
-delete_atoms atom 1
+variable vac atom id==1
+group vacdel variable vac
+delete_atoms group vacdel
 minimize 1e-10 1e-10 1000 10000
 variable e_vacancy equal pe
 variable natom2 equal count(all)
@@ -707,45 +787,54 @@ class LAMMPSRunner:
             return results.get(prop_name, {"value": None, "error": "not computed"})
 
         elif prop_name == "elastic_constants":
-            script = _generate_elastic_input(
-                self.elements, pair_style, pair_coeff, guess, self.structure, size=3, is_dp=getattr(self, '_is_dp', False)
-            )
-            output = await self._run_lammps(script)
-            parsed = _parse_lammps_output(output)
-            # Extract elastic constants from strain energies
-            e0 = parsed.get("reference_energy", 0)
-            e_exx = parsed.get("e_exx", 0)
-            e_eyy = parsed.get("e_eyy", 0)
-            e_shear = parsed.get("e_shear_xy", 0)
-            eps = parsed.get("strain", 0.01)
-            vol = parsed.get("volume", 1)
-
-            # eV/A^3 → GPa: multiply by 160.2177
+            # Central-difference strain-energy method for cubic crystals
+            eps = 0.001
+            size = 3
             conv = 160.2177
-            C11 = (e_exx - e0) / (eps ** 2 * vol) * conv if vol else 0
-            C12 = (e_eyy - e0) / (eps ** 2 * vol) * conv if vol else 0
-            C44 = (e_shear - e0) / (eps ** 2 * vol) * conv if vol else 0
 
-            # Grade individual constants
+            ref_script = _generate_basic_input(
+                self.elements, pair_style, pair_coeff, guess, self.structure, size
+            )
+            ref_script += "variable e equal pe" + chr(10) + "variable v equal vol" + chr(10) + "run 0" + chr(10) + 'print "RESULT e ${e}"' + chr(10) + 'print "RESULT v ${v}"' + chr(10)
+            ref_out = await self._run_lammps(ref_script)
+            ref_parsed = _parse_lammps_output(ref_out)
+            E0 = ref_parsed.get("e", 0)
+            vol = ref_parsed.get("v", 1)
+
+            async def _run_strain(strain_x=0, strain_y=0, shear_xy=0):
+                script = _generate_strained_input(
+                    self.elements, pair_style, pair_coeff, guess, self.structure, size,
+                    strain_x=strain_x, strain_y=strain_y, shear_xy=shear_xy
+                )
+                out = await self._run_lammps(script)
+                p = _parse_lammps_output(out)
+                return p.get("e", 0)
+
+            Ep_x = await _run_strain(strain_x=eps)
+            Em_x = await _run_strain(strain_x=-eps)
+            C11 = (Ep_x - 2*E0 + Em_x) / (eps**2 * vol) * conv
+
+            Ep_y = await _run_strain(strain_y=eps)
+            Ep_xy = await _run_strain(strain_x=eps, strain_y=eps)
+            C12 = (Ep_xy - Ep_x - Ep_y + E0) / (eps**2 * vol) * conv
+
+            Ep_shear = await _run_strain(shear_xy=eps)
+            Em_shear = await _run_strain(shear_xy=-eps)
+            C44 = (Ep_shear - 2*E0 + Em_shear) / (eps**2 * vol) * conv
+
             ref_c11 = _get_ref_value(element, self.structure, "C11")
             ref_c12 = _get_ref_value(element, self.structure, "C12")
             ref_c44 = _get_ref_value(element, self.structure, "C44")
 
             result = {
-                "value": {
-                    "C11": round(C11, 2),
-                    "C12": round(C12, 2),
-                    "C44": round(C44, 2),
-                },
+                "value": {"C11": round(C11, 2), "C12": round(C12, 2), "C44": round(C44, 2)},
                 "unit": "GPa",
                 "grades": {
                     "C11": _grade_property(C11, ref_c11),
                     "C12": _grade_property(C12, ref_c12),
                     "C44": _grade_property(C44, ref_c44),
                 },
-                "reference": {
-                    "C11": ref_c11, "C12": ref_c12, "C44": ref_c44,
-                },
+                "reference": {"C11": ref_c11, "C12": ref_c12, "C44": ref_c44},
             }
             if progress_callback:
                 await progress_callback(0.7, "elastic_constants done")
