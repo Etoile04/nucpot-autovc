@@ -1,51 +1,91 @@
 version: "3.8"
-
 services:
   api:
     build: .
+    env_file: .env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+    - |
+      if [ -f /app/bin/lmp-full ] && [ ! -e /usr/local/bin/lmp_serial ]; then
+        ln -sf /app/bin/lmp-full /usr/local/bin/lmp_serial
+        echo "[bootstrap] Created lmp_serial -> lmp-full"
+      fi
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends libgomp1 libomp5 libopenmpi40 2>/dev/null || true
+      mkdir -p /app/uploads
+      mkdir -p /opt/deepmd/lib
+      exec python -m uvicorn autovc.main:create_app --host 0.0.0.0 --port 8000 --factory
     ports:
-      - "8002:8000"
+    - 8002:8000
     environment:
-      - DATABASE_URL=postgresql://nucpot:nucpot@nucpot-nucpot-db-1:5432/nucpot
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - SUPABASE_URL=${SUPABASE_URL:-}
-      - SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY:-}
-      - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY:-}
+    - HTTP_PROXY=
+    - HTTPS_PROXY=
+    - http_proxy=
+    - https_proxy=
+    - NO_PROXY=
+    - no_proxy=
+    - LD_LIBRARY_PATH=/opt/deepmd/lib
     volumes:
-      - autovc-data:/app/data
+    - autovc-data:/app/data
+    - autovc-uploads:/app/uploads
+    - type: bind
+      source: ./src
+      target: /app/src
+    - type: bind
+      source: ./bin
+      target: /app/bin
+    - type: bind
+      source: ./deepmd-plugin
+      target: /opt/deepmd/lib
     depends_on:
-      - redis
+    - redis
     restart: unless-stopped
-
   worker:
     build: .
-    command: ["python", "-m", "celery", "-A", "autovc.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    env_file: .env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+    - |
+      if [ -f /app/bin/lmp-full ] && [ ! -e /usr/local/bin/lmp_serial ]; then
+        ln -sf /app/bin/lmp-full /usr/local/bin/lmp_serial
+        echo "[bootstrap] Created lmp_serial -> lmp-full"
+      fi
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends libgomp1 libomp5 libopenmpi40 2>/dev/null || true
+      mkdir -p /app/uploads
+      mkdir -p /opt/deepmd/lib
+      exec python -m celery -A autovc.workers.celery_app worker --loglevel=info --concurrency=2
     environment:
-      - DATABASE_URL=postgresql://nucpot:nucpot@nucpot-db-1:5432/nucpot
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - SUPABASE_URL=${SUPABASE_URL:-}
-      - SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY:-}
-      - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY:-}
+    - HTTP_PROXY=
+    - HTTPS_PROXY=
+    - http_proxy=
+    - https_proxy=
+    - NO_PROXY=
+    - no_proxy=
     volumes:
-      - autovc-data:/app/data
+    - autovc-data:/app/data
+    - autovc-uploads:/app/uploads
+    - type: bind
+      source: ./src
+      target: /app/src
+    - type: bind
+      source: ./bin
+      target: /app/bin
+    - type: bind
+      source: ./deepmd-plugin
+      target: /opt/deepmd/lib
     depends_on:
-      - redis
+    - redis
     restart: unless-stopped
-
   redis:
     image: redis:7-alpine
     volumes:
-      - redis-data:/data
+    - redis-data:/data
     restart: unless-stopped
-
 volumes:
-  autovc-data:
-  redis-data:
-
+  autovc-data: null
+  autovc-uploads: null
+  redis-data: null
 networks:
   default:
     name: nucpot_default

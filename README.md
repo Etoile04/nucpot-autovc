@@ -16,7 +16,7 @@ A FastAPI service that runs [LAMMPS](https://www.lammps.org/) simulations to com
 
 Interatomic potentials are the foundation of atomistic simulations. NucPot AutoVC automates the tedious process of verifying whether a potential reproduces known material properties — lattice constants, cohesive energies, elastic constants, bulk moduli, and vacancy formation energies — and assigns transparent A–F grades.
 
-The system exposes a REST API for submitting verification jobs, manages potential metadata via [Supabase](https://supabase.com/) (PostgreSQL), and dispatches LAMMPS calculations through a Celery/Redis task queue. Results are stored persistently and exportable as JSON or PDF reports.
+The system exposes a REST API for submitting verification jobs, manages potential metadata via [Supabase](https://supabase.com/) (PostgreSQL), and runs LAMMPS calculations as async tasks (KIM verifications use Celery/Redis). See [docs/architecture.md](docs/architecture.md) for the process model. Results are stored persistently and exportable as JSON or PDF reports.
 
 ---
 
