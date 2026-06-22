@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 _STRUCTURE_MAP: dict[str, str] = {
     "BCC_gamma": "BCC",
     "BCC": "BCC",
+    "bcc": "BCC",
+    "fcc": "FCC",
+    "hcp": "HCP",
+    "sc": "SC",
     "FCC": "FCC",
     "HCP": "HCP",
     "diamond": "Diamond",

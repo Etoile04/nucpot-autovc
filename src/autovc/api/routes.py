@@ -95,7 +95,7 @@ def list_potentials(db: Session = Depends(get_db)):
 
 
 @router.get("/potentials/{pid}", response_model=PotentialResponse)
-def get_potential(pid: int, db: Session = Depends(get_db)):
+def get_potential(pid: str, db: Session = Depends(get_db)):
     pot = db.query(Potential).filter(Potential.id == pid).first()
     if not pot:
         raise HTTPException(404, "Not found")

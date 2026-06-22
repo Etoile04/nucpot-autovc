@@ -22,7 +22,7 @@ async def get_potential(potential_id: str) -> dict:
             f"{SUPABASE_URL}/rest/v1/potentials",
             params={
                 "id": f"eq.{potential_id}",
-                "select": "id,name,type,format,elements,lammps_config,file_url",
+                "select": "id,name,subtype,format,elements,lammps_config,file_url",
             },
             headers=_headers(),
         )

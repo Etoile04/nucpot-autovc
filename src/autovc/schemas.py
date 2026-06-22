@@ -49,7 +49,7 @@ class VerificationResultResponse(BaseModel):
 
 class VerificationJobResponse(BaseModel):
     id: int
-    potential_id: int
+    potential_id: str
     status: str
     properties_requested: list[str]
     error_message: str | None
@@ -60,7 +60,7 @@ class VerificationJobResponse(BaseModel):
 
 
 class PotentialResponse(BaseModel):
-    id: int
+    id: str
     name: str
     potential_type: str
     species: list[str]

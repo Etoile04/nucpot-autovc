@@ -5,7 +5,7 @@ from autovc.database import Base
 
 class Potential(Base):
     __tablename__ = "potentials"
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
     potential_type: Mapped[str] = mapped_column(String(32), nullable=False)
     species: Mapped[list] = mapped_column(JSON, nullable=False)
@@ -18,7 +18,7 @@ class Potential(Base):
 class VerificationJob(Base):
     __tablename__ = "verification_jobs"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    potential_id: Mapped[int] = mapped_column(ForeignKey("potentials.id"), nullable=False)
+    potential_id: Mapped[str] = mapped_column(ForeignKey("potentials.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending")
     properties_requested: Mapped[list] = mapped_column(JSON, nullable=False)
     structure: Mapped[str] = mapped_column(String(16), default="bcc")
