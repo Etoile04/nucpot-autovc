@@ -544,6 +544,11 @@ class LAMMPSRunner:
         is_meam = "meam" in ptype_init
         is_mtp = "mtp" in ptype_init
         if is_dp:
+            raise ValueError(
+                "DeepMD/DP potentials are not supported in this deployment. "
+                "Requires LAMMPS with plugin command (2023+) + TensorFlow/PyTorch runtime (~2GB). "
+                "Only 2 affected potentials: TaNbWMoV_DP, FeHHe-DP."
+            )
             self.lammps_bin = lammps_bin or "/usr/local/bin/lmp-with-dp"
             self._is_dp = True
             self._is_meam = False
@@ -655,6 +660,34 @@ class LAMMPSRunner:
         all_elements = " ".join(self.elements) if self.elements else "U"
 
         pair_style = cfg.get("pair_style", "eam/alloy")
+
+        # Handle hybrid/overlay styles (e.g., Bonny 2011 FeCr)
+        if "hybrid" in pair_style.lower():
+            raw_pc = cfg.get("pair_coeff", "")
+            if raw_pc:
+                # Resolve file paths in pair_coeff lines
+                lines = raw_pc.split("\n")
+                resolved = []
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    # Ensure line starts with pair_coeff
+                    if not line.startswith("pair_coeff"):
+                        line = "pair_coeff " + line
+                    # Resolve filenames
+                    parts = line.split()
+                    for j, part in enumerate(parts):
+                        if "." in part and not part.startswith("*") and part not in ("eam/alloy", "eam/fs", "meam", "deepmd"):
+                            abs_path = os.path.join(self.potential_dir, part)
+                            if os.path.isfile(abs_path):
+                                parts[j] = abs_path
+                    resolved.append(" ".join(parts))
+                pair_coeff = "\n".join(resolved)
+            else:
+                pair_coeff = f"pair_coeff * * {pot_file} {all_elements}"
+            return f"pair_style {pair_style}", pair_coeff
+
         if "deepmd" in pair_style.lower():
             # DP: pair_style deepmd /path/to/model.pb
             return f"pair_style {pair_style} {pot_file}", "pair_coeff * *"
