@@ -14,6 +14,9 @@ RUN cd kim-api && mkdir build && cd build &&     cmake .. -DCMAKE_INSTALL_PREFIX
 
 # Install kimpy (needs pkg-config to find kim-api)
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+# GFW workaround: pypi.org direct is unreliable from the docker VM; use TUNA
+# pypi mirror for all pip installs.
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 RUN pip install --no-cache-dir kimpy
 
 # Install project deps
