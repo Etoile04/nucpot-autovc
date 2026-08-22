@@ -1,0 +1,89 @@
+#!/bin/sh
+
+#
+# KIM-API: An API for interatomic models
+# Copyright (c) 2013--2022, Regents of the University of Minnesota.
+# All rights reserved.
+#
+# Contributors:
+#    Ryan S. Elliott
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+#
+# Release: This file is part of the kim-api-2.4.2 package.
+#
+
+
+# filter file list  # NOTE: keep in sync with verion in git-hooks/pre-commit
+filter_file_list () {
+  local file_list="$1"
+  local ignore_file="`git rev-parse --show-toplevel`/.format-ignore"
+  files_to_check_format=""
+
+  for file in ${file_list}; do
+    local keep=`printf ${file} | sed -e 's/^.*\.hpp$//'     \
+                                     -e 's/^.*\.hpp\.in$//' \
+                                     -e 's/^.*\.cpp$//'     \
+                                     -e 's/^.*\.cpp\.in$//' \
+                                     -e 's/^.*\.inc$//'     \
+                                     -e 's/^.*\.inc\.in$//' \
+                                     -e 's/^.*\.h$//'       \
+                                     -e 's/^.*\.h\.in$//'   \
+                                     -e 's/^.*\.c$//'       \
+                                     -e 's/^.*\.c\.in$//'`
+    if test -f "${ignore_file}"; then
+      if test `grep -c "^${file}$" "${ignore_file}"` -gt 0; then
+        # ignore
+        printf "File '${file}' is in format-ignore file: ignoring.\n"
+        keep=no
+      fi
+    fi
+
+    if test x"${keep}" = x""; then
+      files_to_check_format="${files_to_check_format} ${file}"
+    fi
+  done
+}
+
+# goto the top level repo directory
+if THE_GIT_DIR="`git rev-parse --show-toplevel 2> /dev/null`"; then
+  cd "${THE_GIT_DIR}"
+else
+  printf "Not in the git repo.  Exiting...\n"
+  exit 1
+fi
+
+files=`find .    -name "*.hpp"     \
+              -o -name "*.hpp.in"  \
+              -o -name "*.cpp"     \
+              -o -name "*.cpp.in"  \
+              -o -name "*.inc"     \
+              -o -name "*.inc.in"  \
+              -o -name "*.h"       \
+              -o -name "*.h.in"    \
+              -o -name "*.c"       \
+              -o -name "*.c.in" |  \
+       sed -e 's|^\./||'`
+
+printf "Executing clang-format on all c/c++ files in directory ${PWD}.\n"
+
+files_to_check_format=""
+filter_file_list "${files}"
+
+clang-format -style=file -i ${files_to_check_format}

@@ -1,0 +1,100 @@
+#
+# KIM-API: An API for interatomic models
+# Copyright (c) 2013--2022, Regents of the University of Minnesota.
+# All rights reserved.
+#
+# Contributors:
+#    Ryan S. Elliott
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+#
+# Release: This file is part of the kim-api-2.4.2 package.
+#
+
+
+The kim-api git repository comes with a set of git-hooks that should be enabled
+once the repo has been cloned locally.  A script is provided to do just this:
+
+$ ./scripts/configure-git-repo-hooks-etc
+
+
+Seven other scripts are provided:
+
+* ci-build-and-test
+
+  This script executes a number of build and install scenarios and is used by
+  the CI.
+
+* ci-docker-build-and-run
+
+  This script is used by the CI to set up a docker build and then execute the
+  ci-build-and-test within the specific docker environment.
+
+* clang-format-all
+
+  This script will format all the c/c++ code in the repo using the clang-format
+  utility.  clang-format is assumed to be installed on the system and in the
+  path.  The ./git-hooks/pre-commit hook also depends on the availability of
+  clang-format.
+
+* create-package
+
+  This script is only for use by the package maintainer and is used to generate
+  a release commit and the corresponding official release tarball.
+
+* format-all
+
+  This script will format all the c/c++ and fortran code in the repo by calling
+  the clang-foramt-all and fprettify-all scripts.
+
+* fprettify-all
+
+  This script will format all the fortran code in the repo using the
+  fprettify utility.  fprettify is assumed to be installed on the system
+  and in the path.  The ./git-hooks/pre-commit hook also depends on the
+  availability of fprettify.
+
+* run-cmds-from-install
+
+  This script extracts commands from the INSTALL file and executes them.  The
+  script is used by CI and for testing.
+
+
+Branches:
+
+* There are two official branches (see below), all other branches are transient
+  and may be rewritten at any time.
+
+  - "master" This branch always points to the most recent official release.
+
+  - "devel" This branch points to the latest development commits.  It is not
+    guaranteed to be buildable.  Pull requests should be based off this branch.
+
+
+Tags:
+
+* There are two tag name conventions in use.
+
+  - "vX.Y.Z" These tags point to the final release commit version of the
+    release.  These tags show up in the history (git log) of the "master"
+    branch, but not of the "devel" branch.
+
+  - "vX.Y.Z-git" These tags point to the final commit version of the release,
+    before the create-package script is executed to generate the release
+    commit.  These tags show up in the history (git log) of the "devel" branch.

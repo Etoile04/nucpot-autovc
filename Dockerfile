@@ -7,9 +7,10 @@ FROM python:3.12-slim AS builder
 RUN sed -i "s|deb.debian.org|mirrors.ustc.edu.cn|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
 RUN apt-get update && apt-get install -y --no-install-recommends     build-essential cmake gfortran git pkg-config wget     && rm -rf /var/lib/apt/lists/*
 
-# Build kim-api from source
+# Build kim-api from source (vendored copy — GFW blocks in-container git clone)
 WORKDIR /build
-RUN git clone --depth 1 https://github.com/openkim/kim-api.git &&     cd kim-api && mkdir build && cd build &&     cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local &&     make -j$(nproc) && make install && ldconfig
+COPY vendor/kim-api ./kim-api
+RUN cd kim-api && mkdir build && cd build &&     cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local &&     make -j$(nproc) && make install && ldconfig
 
 # Install kimpy (needs pkg-config to find kim-api)
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig

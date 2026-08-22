@@ -1,0 +1,173 @@
+#
+# KIM-API: An API for interatomic models
+# Copyright (c) 2013--2022, Regents of the University of Minnesota.
+# All rights reserved.
+#
+# Contributors:
+#    Ryan S. Elliott
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+#
+# Release: This file is part of the kim-api-2.4.2 package.
+#
+
+_@KIM_API_C_ID_PROJECT_NAME@_collections_management()
+{
+  local ORIGIN
+  if test -n "${ZSH_VERSION}"; then
+    ORIGIN=$(cd "$(dirname "${(%):-%x}")" && pwd)
+  else
+    # Get ORIGIN location of this script:
+    SOURCE="${BASH_SOURCE[0]}"
+    # https://stackoverflow.com/questions/59895/how-to-get-the-source-directory-of-a-bash-script-from-within-the-script-itself
+    if command -v readlink >/dev/null 2>&1; then
+      while test -h "$SOURCE"; do # resolve $SOURCE until the file is no longer a symlink
+        DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+        SOURCE="$(readlink "$SOURCE")"
+        [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE" # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
+      done
+    fi
+    ORIGIN="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+  fi
+  local collections_info
+  collections_info=@_collections_info_rel@
+
+  local cd_type
+  if test -n "${ZSH_VERSION}"; then
+    cd_type=`type -w _cd | sed -e 's/^[^:]*: *//'`
+  else
+    cd_type=`type -t _cd`
+  fi
+
+  local cur subcommands opts
+  subcommands="list set-user-model-drivers-dir set-user-portable-models-dir "
+  subcommands="${subcommands} set-user-simulator-models-dir install reinstall"
+  subcommands="${subcommands} remove remove-all"
+
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+
+  if test ${COMP_CWORD} -eq 1; then
+    COMPREPLY=( $(compgen -W "${subcommands}" -- "${cur}") )
+    return 0
+  else
+    case "${COMP_WORDS[1]}" in
+      list)
+        opts=""
+        if test ${COMP_CWORD} -eq 2; then
+          opts="--log"
+        else
+          return 1
+        fi
+        COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+        return 0
+        ;;
+      set-user-*)
+        if test ${COMP_CWORD} -gt 2; then
+          return 1
+        else
+          if test x"function" = x"${cd_type}"; then  # check if bash_completion has been loaded & _cd defined
+            _cd
+          fi
+          return 0
+        fi
+        ;;
+      install)
+        if test ${COMP_CWORD} -eq 2; then
+          COMPREPLY=( $(compgen -W "--force CWD environment user system" \
+                                -- "${cur}") )
+          return 0
+        fi
+        if test ${COMP_CWORD} -eq 3 -a x"${COMP_WORDS[2]}" = x"--force"; then
+          COMPREPLY=( $(compgen -W "CWD environment user system" \
+                                -- "${cur}") )
+          return 0
+        fi
+        local collection_position
+        if test x"${COMP_WORDS[2]}" = x"--force"; then
+          collection_position=3
+        else
+          collection_position=2
+        fi
+        opts=""
+        if test ${COMP_CWORD} -eq `expr ${collection_position} + 1` \
+                -a x"system" = x"${COMP_WORDS[${collection_position}]}"; then
+          opts="--sudo OpenKIM"
+        elif test ${COMP_CWORD} -eq 3; then
+          opts="OpenKIM"
+        fi
+
+        local query='query={"type":{"$regex":"md|mo|sm"},"kim-api-version":{"$regex":"^@PROJECT_VERSION_MAJOR@\\."}}'
+        query="${query}"'&fields={"kimcode":1}'
+        query="${query}"'&database=obj&history=on'
+        local list=`wget -q -O - --post-data="${query}" \
+                    https://query.openkim.org/api | \
+                    sed -e 's/\[//g' -e 's/\]//g' \
+                    -e 's/{"kimcode": "\([^"]*\)"},*/\1/g'`
+        opts="${opts} ${list}"
+
+        if test x"function" = x"${cd_type}"; then  # check if bash_completion has been loaded & _cd defined
+          _cd
+        fi
+        COMPREPLY=( "${COMPREPLY[@]}" $(compgen -W "${opts}" -- "${cur}") )
+        return 0
+        ;;
+      reinstall|remove)
+        opts=""
+        if test ${COMP_CWORD} -eq 2; then
+          opts="--force --interactive --sudo"
+        elif test ${COMP_CWORD} -eq 3 -a x"--interactive" = x"${COMP_WORDS[2]}"; then
+          opts="--sudo"
+        elif test ${COMP_CWORD} -eq 3 -a x"--force" = x"${COMP_WORDS[2]}"; then
+          opts="--sudo"
+        fi
+        local models drivers simulator_models
+        drivers=`${collections_info} model_drivers | sed -e 's|[^[:space:]]* \([^[:space:]]*\) .*|\1|'`
+        models=`${collections_info} portable_models | sed -e 's|[^[:space:]]* \([^[:space:]]*\) .*|\1|'`
+        drivers=`${collections_info} simulator_models | sed -e 's|[^[:space:]]* \([^[:space:]]*\) .*|\1|'`
+        opts="${opts} ${drivers} ${models} ${simulator_models}"
+
+        if test x"reinstall" = x"${COMP_WORDS[1]}"; then
+          if test x"function" = x"cd_type"; then  # check if bash_completion has been loaded & _cd defined
+            _cd
+          fi
+        fi
+        COMPREPLY=( "${COMPREPLY[@]}" $(compgen -W "${opts}" -- "${cur}") )
+        return 0
+        ;;
+      remove-all)
+        opts=""
+        if test ${COMP_CWORD} -eq 2; then
+          opts="--force --interactive --sudo"
+        elif test ${COMP_CWORD} -eq 3 -a x"--interactive" = x"${COMP_WORDS[2]}"; then
+          opts="--sudo"
+        elif test ${COMP_CWORD} -eq 3 -a x"--force" = x"${COMP_WORDS[2]}"; then
+          opts="--sudo"
+        fi
+        COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+        return 0
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  fi
+  return 1
+}
+complete -F _@KIM_API_C_ID_PROJECT_NAME@_collections_management @PROJECT_NAME@-collections-management

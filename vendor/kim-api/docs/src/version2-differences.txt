@@ -1,0 +1,4152 @@
+/*                                                                            */
+/* KIM-API: An API for interatomic models                                     */
+/* Copyright (c) 2013--2022, Regents of the University of Minnesota.          */
+/* All rights reserved.                                                       */
+/*                                                                            */
+/* Contributors:                                                              */
+/*    Ryan S. Elliott                                                         */
+/*    Ellad B. Tadmor                                                         */
+/*                                                                            */
+/* SPDX-License-Identifier: LGPL-2.1-or-later                                 */
+/*                                                                            */
+/* This library is free software; you can redistribute it and/or              */
+/* modify it under the terms of the GNU Lesser General Public                 */
+/* License as published by the Free Software Foundation; either               */
+/* version 2.1 of the License, or (at your option) any later version.         */
+/*                                                                            */
+/* This library is distributed in the hope that it will be useful,            */
+/* but WITHOUT ANY WARRANTY; without even the implied warranty of             */
+/* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU          */
+/* Lesser General Public License for more details.                            */
+/*                                                                            */
+/* You should have received a copy of the GNU Lesser General Public License   */
+/* along with this library; if not, write to the Free Software Foundation,    */
+/* Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA         */
+/*                                                                            */
+
+/*                                                                            */
+/* Release: This file is part of the kim-api-2.4.2 package.                   */
+/*                                                                            */
+
+/**
+\page version2_differences Summary of Differences Between kim-api-v1 and kim-api-v2
+
+Previous Section: \ref implementation.
+
+\note This section describes version 2.0 of the %KIM API.  Additions made in
+version 2.1 and above to the %KIM API package are not included.
+
+Experience with using and supporting the kim-api-v1 package has shown that the
+package's complexity (in terms of the number of different "modes of operation";
+e.g., neighbor lists: half, full, iterator, locator; Neighbor-list Boundary
+Conditions (NBCs): cluster, miopbc, neigh_pure, neigh_rvec; etc.) makes it
+difficult for new users to become competent kim-api-v1 code developers.  This
+also means that %KIM Models will only work with KIM-compliant codes that
+support the same modes of operation, thereby limiting the utility of the
+kim-api as a standard.  Further, the kim-api's complexity results in model
+implementations that are convoluted due to developers' desire to support
+<em>all</em> modes of operation.  This experience has led us to an approach
+that gives kim-api-v2 a dramatically simplified form, while still retaining a
+high degree of flexibility.  Thus, in regard to feature design and selection
+for the kim-api-v2 package, we have taken "simplicity" as a guiding principle.
+
+## High-level changes between kim-api-v1 and kim-api-v2
+
+- <b>NBCs Have Been Eliminated</b>: kim-api-v2 supports only one type of
+  configuration (as described in Section \ref theory).  This corresponds,
+  roughly, to the kim-api-v1 NEIGH_PURE_F NBC.  Additionally:
+
+  - All neighbor lists in kim-api-v2 are full, unordered, and random-access.
+    (However, see \ref neighbor_list_hint "Neighbor List Hint".)
+
+  - Particle Contributing (a.k.a., padding or ghost-atom) status (contributing
+    or non-contributing) is explicitly specified in the
+    <em>particleContributing</em> argument.  A particle with zero neighbors in
+    (one of) its neighbor lists has no special meaning in kim-api-v2, as
+    opposed to in kim-api-v1 where this indicates the particle is
+    non-contributing.
+
+- <b>Compute Routine Arguments and Callbacks Have Been Separated From the Model
+  Object</b>: kim-api-v2 separates the arguments and callbacks of the compute
+  routine from the model object.  These items are now stored in a separate
+  compute-arguments object that must be provided to the model's compute
+  routine.  This new approach provides a cleaner conceptual distinction between
+  things the model is responsible for (influence distance, cutoffs, parameters,
+  and create / compute / destroy routines), and things that the simulator is
+  responsible for (the configuration, compute-arguments, and compute-callback
+  routines).  One practical advantage of this separation occurs for
+  multi-threaded simulators.  Such a simulator can use a single model object
+  with multiple compute-arguments objects to compute (energy, forces, etc.) for
+  many different configurations simultaneously.  Without the
+  model/compute-arguments separation multiple model objects would be necessary.
+  This would require multiple in-memory copies of the model's parameter set,
+  which can be very wasteful since (in particular, for "machine learning"
+  models) a model's parameter set can be very large.
+
+- <b>%KIM Descriptor Files Have Been Eliminated</b>: kim-api-v2 does not use
+  <em>%KIM descriptor files</em>.  Instead, kim-api-v2 models register their
+  units, conventions, and parameters in their <em>ModelCreate</em>
+  initialization routine, and they register their arguments and callbacks in
+  their <em>ModelComputeArgumentsCreate</em> initialization routine.
+  Simulator--model matching is now the responsibility of the simulator.  This
+  is facilitated by kim-api-v2 through the availability of routines for
+  obtaining the model's registered values of all necessary quantities at
+  run-time.
+
+  Best practice for kim-api-v2 simulators is to, first create a model object
+  and an associated compute-arguments object (which also execute the model's
+  initialization routines), second interrogate the model's capabilities to
+  determine if the desired computation can be successfully performed with the
+  model, and third, if possible, perform the desired computation.
+
+  This scheme for simulator--model matching places a larger burden (as compared
+  to kim-api-v1) on the simulator.  However, it has been determined that a
+  full-featured "KIM descriptor file"--based matching specification (covering
+  all possibilities) is too complex.  Thus, it is best to perform this matching
+  process in the simulator's code at run-time.  In the worst-case, a simulator
+  can simply <em>assume</em> that it matches with the model and attempt to
+  perform the desired computation.  As long as the simulator carefully checks
+  for any and all errors reported by the %KIM API, it should detect an error at
+  some point during its processing if the simulator, in fact, does not match
+  with the model.
+
+- <b>A New Memory Management Scheme</b>: kim-api-v2 requires the simulator to
+  be responsible for storage memory associated with all input and output
+  compute-arguments communicated between the simulator and the model via a
+  compute-arguments object.  Similarly, kim-api-v2 requires the model to be
+  responsible for storage memory associated with its influence distance, its
+  neighbor list cutoff values, and its published parameters.
+
+  kim-api-v2 does not provide a routine analogous to the KIM_API_Allocate() of
+  kim-api-v1.  This routine is now seen as a source of much confusion regarding
+  the memory management model employed in kim-api-v1.  Thus, it is best not to
+  provide such a capability as part of kim-api-v2.
+
+- <b>Language Consistency</b>: kim-api-v2 aims to conform to standard practice
+  and idioms of the native code language, as opposed to kim-api-v1 which aimed
+  to maintain consistency of the api across languages.
+
+  This means that using the kim-api-v2 in your preferred language feels more
+  natural.  For example, the C++ api bindings extensively use namespaces,
+  objects, std::string, and error codes as function return values.  The Fortran
+  api binding provides error codes as arguments to SUBROUTINES, uses handles to
+  objects, and hides (as much as possible) the effort of making Fortran
+  interoperable with C and other languages.  In particular, the need for
+  explicit use of the intrinsic C_F_POINTER() subroutine has been minimized.
+
+  Consistent identifier naming schemes have been established within each
+  language binding.  Abbreviations have been avoided to make names easier to
+  remember.
+
+- <b>Explicit Definitions</b>: Clear definitions for all concepts used by the
+  kim-api-v2 package are provided in Section \ref theory.
+
+  In most cases, these are the same concepts and definitions employed by
+  kim-api-v1.  However, they were not explicitly stated in the kim-api-v1
+  documentation.
+
+- <b>Improved Logging Facilities and Error Messages</b>: kim-api-v2 has been
+  redesigned and rewritten from the ground up.  Significantly improved
+  facilities for logging events and execution progress have been included.
+  Along with these general enhancements, all error messages have been rewritten
+  with an eye toward improved clarity.
+
+
+## Lower-level changes between kim-api-v2 and kim-api-v1
+
+- <b>FIXED Parameters Have Been Eliminated</b>: kim-api-v2 defines only one
+  type of "published" parameters for a model.  These are all changeable, and
+  thus, would correspond to the "FREE" parameters of kim-api-v1.
+
+  The FIXED parameters of kim-api-v1 must now be stored in the model buffer and
+  are inaccessible to the simulator.
+
+- <b>Argument Shape and Extent</b>: For simplicity, explicit api tracking of
+  argument shape and extent has been eliminated from kim-api-v2.  These values
+  are defined as part of the api documentation.  All arguments must have fixed
+  shape and extent values that are either given numbers or defined in terms of
+  <b>numberOfParticles</b>.
+
+  Published model parameters are always taken to be one-dimensional arrays with
+  a specified extent that must be defined by the model and communicated to the
+  API through the get/set routines for parameters.  Thus, scalar parameters
+  have extent 1.  Multidimensional array parameters are treated by the API as
+  one-dimensional arrays with extent equal to the total number of values in the
+  multidimensional array.
+
+- <b>Extensible Strongly-Typed Enumerations</b>: kim-api-v2 uses \ref
+  extensible_enumeration "extensible strongly-typed enumerations" as
+  identifiers for quantities as opposed to kim-api-v1 which uses character
+  arrays (strings) or "index" values.  Thus, all "index" values and the
+  associated routines (such as KIM_API_get_index()) have been eliminated.  Each
+  of the extensible enumerations in kim-api-v2 has an interface for discovering
+  and comparing all of the members of the enumeration.  Discovery is
+  implemented using two functions.  One provides the number of members in the
+  enumeration, and the other provides a copy of the \f$i\f$-th enumeration
+  member.  (The ordering is undefined, but guaranteed to be stable during any
+  single run-time program execution using the %KIM API.)  The various discovery
+  and comparison routines are listed in the table below.
+
+
+- <b>Consistent and Descriptive Identifier Names</b>: The entire set of
+  kim-api-v2 identifier names (namespace, module, object, subroutine, function,
+  enumerations) have been reviewed and selected for clarity and consistency.
+  As a result many of the identifier names from kim-api-v1 have changed in
+  kim-api-v2.  Here we provide complete tables of \ref routine_id_table
+  "routine names", \ref external_enum_id_table "external enumeration <!--
+  -->constants", and \ref external_enum_discovery_table "external <!--
+  -->enumeration discovery routines".
+
+  <b>Routine identifier name table \anchor routine_id_table :</b>
+<table><caption align=top></caption>
+<tr>
+  <th>
+    kim-api-v1
+  </th><th>
+    kim-api-v2 C++ Binding
+  </th><th>
+    kim-api-v2 C Binding
+  </th><th>
+    kim-api-v2 Fortran Binding
+  </th>
+</tr>
+<tr>
+  <td>
+    KIM_API_file_init()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_string_init()
+  </td><td>
+    KIM::Model::Create()
+  </td><td>
+    KIM_Model_Create()
+  </td><td>
+    kim_model_module::kim_model_create()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelCreate::SetModelNumbering()
+    <br>
+    KIM::ModelDriverCreate::SetModelNumbering()
+  </td><td>
+    KIM_ModelCreate_SetModelNumbering()
+    <br>
+    KIM_ModelDriverCreate_SetModelNumbering()
+  </td><td>
+    kim_model_create_module::kim_set_model_numbering()
+    <br>
+    kim_model_driver_create_module::kim_set_model_numbering()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::IsRoutinePresent()
+  </td><td>
+    KIM_Model_IsRoutinePresent()
+  </td><td>
+    kim_model_module::kim_is_routine_present()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::ComputeArgumentsCreate()
+  </td><td>
+    KIM_Model_ComputeArgumentsCreate()
+  </td><td>
+    kim_model_module::kim_compute_arguments_create()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::ComputeArgumentsDestroy()
+  </td><td>
+    KIM_Model_ComputeArgumentsDestroy()
+  </td><td>
+    kim_model_module::kim_compute_arguments_destroy()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_version()
+  </td><td>
+    KIM::SEM_VER::GetSemVer()
+  </td><td>
+    KIM_SEM_VER_GetSemVer()
+  </td><td>
+    kim_sem_ver_module::kim_get_sem_ver()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_version_major()
+  </td><td>
+    KIM::SEM_VER::ParseSemVer()
+  </td><td>
+    KIM_SEM_VER_ParseSemVer()
+  </td><td>
+    kim_sem_ver_module::kim_parse_sem_ver()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_version_minor()
+  </td><td>
+    KIM::SEM_VER::ParseSemVer()
+  </td><td>
+    KIM_SEM_VER_ParseSemVer()
+  </td><td>
+    kim_sem_ver_module::kim_parse_sem_ver()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_version_prerelease()
+  </td><td>
+    KIM::SEM_VER::ParseSemVer()
+  </td><td>
+    KIM_SEM_VER_ParseSemVer()
+  </td><td>
+    kim_sem_ver_module::kim_parse_sem_ver()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_version_metadata()
+  </td><td>
+    KIM::SEM_VER::ParseSemVer()
+  </td><td>
+    KIM_SEM_VER_ParseSemVer()
+  </td><td>
+    kim_sem_ver_module::kim_parse_sem_ver()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_version_newer()
+  </td><td>
+    KIM::SEM_VER::IsLessThan()
+  </td><td>
+    KIM_SEM_VER_IsLessThan()
+  </td><td>
+    kim_sem_ver_module::kim_is_less_than()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_model_info()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_allocate()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_c_free()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_free()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_print()
+  </td><td>
+    KIM::ComputeArguments::ToString()
+    <br>
+    KIM::Model::ToString()
+    <br>
+    KIM::ModelCompute::ToString()
+    <br>
+    KIM::ModelComputeArguments::ToString()
+    <br>
+    KIM::ModelComputeArgumentsCreate::ToString()
+    <br>
+    KIM::ModelComputeArgumentsDestroy::ToString()
+    <br>
+    KIM::ModelCreate::ToString()
+    <br>
+    KIM::ModelExtension::ToString()
+    <br>
+    KIM::ModelDestroy::ToString()
+    <br>
+    KIM::ModelDriverCreate::ToString()
+    <br>
+    KIM::ModelRefresh::ToString()
+    <br>
+    KIM::ModelWriteParameterizedModel::ToString()
+  </td><td>
+    KIM_ComputeArguments_ToString()
+    <br>
+    KIM_Model_ToString()
+    <br>
+    KIM_ModelCompute_ToString()
+    <br>
+    KIM_ModelComputeArguments_ToString()
+    <br>
+    KIM_ModelComputeArgumentsCreate_ToString()
+    <br>
+    KIM_ModelComputeArgumentsDestroy_ToString()
+    <br>
+    KIM_ModelCreate_ToString()
+    <br>
+    KIM_ModelExtension_ToString()
+    <br>
+    KIM_ModelDestroy_ToString()
+    <br>
+    KIM_ModelDriverCreate_ToString()
+    <br>
+    KIM_ModelRefresh_ToString()
+    <br>
+    KIM_ModelWriteParameterizedModel_ToString()
+  </td><td>
+    kim_compute_arguments_module::kim_to_string()
+    <br>
+    kim_model_module::kim_to_string()
+    <br>
+    kim_model_compute_module::kim_to_string()
+    <br>
+    kim_model_compute_arguments_module::kim_to_string()
+    <br>
+    kim_model_compute_arguments_create_module::kim_to_string()
+    <br>
+    kim_model_compute_arguments_destroy_module::kim_to_string()
+    <br>
+    kim_model_create_module::kim_to_string()
+    <br>
+    kim_model_extension_module::kim_to_string()
+    <br>
+    kim_model_destroy_module::kim_to_string()
+    <br>
+    kim_model_driver_create_module::kim_to_string()
+    <br>
+    kim_model_refresh_module::kim_to_string()
+    <br>
+    kim_model_write_parameterized_model_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_model_compute()
+  </td><td>
+    KIM::Model::Compute()
+  </td><td>
+    KIM_Model_Compute()
+  </td><td>
+    kim_model_module::kim_compute()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::Extension()
+  </td><td>
+    KIM_Model_Extension()
+  </td><td>
+    kim_model_module::kim_extension()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::WriteParameterizedModel()
+  </td><td>
+    KIM_Model_WriteParameterizedModel()
+  </td><td>
+    kim_model_module::kim_write_parameterized_model()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_model_destroy()
+  </td><td>
+    KIM::Model::Destroy()
+  </td><td>
+    KIM_Model_Destroy()
+  </td><td>
+    kim_model_module::kim_model_destroy()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_set_model_buffer()
+  </td><td>
+    KIM::ModelComputeArguments::SetModelBufferPointer()
+    <br>
+    KIM::ModelCreate::SetModelBufferPointer()
+    <br>
+    KIM::ModelDriverCreate::SetModelBufferPointer()
+    <br>
+    KIM::ModelComputeArgumentsCreate::SetModelBufferPointer()
+  </td><td>
+    KIM_ModelComputeArguments_SetModelBufferPointer()
+    <br>
+    KIM_ModelCreate_SetModelBufferPointer()
+    <br>
+    KIM_ModelDriverCreate_SetModelBufferPointer()
+    <br>
+    KIM_ModelComputeArgumentsCreate_SetModelBufferPointer()
+  </td><td>
+    kim_model_compute_arguments_module::kim_set_model_buffer_pointer()
+    <br>
+    kim_model_create_module::kim_set_model_buffer_pointer()
+    <br>
+    kim_model_driver_create_module::kim_set_model_buffer_pointer()
+    <br>
+    kim_model_compute_arguments_create_module::kim_set_model_buffer_pointer()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_set_sim_buffer()
+  </td><td>
+    KIM::Model::SetSimulatorBufferPointer()
+    <br>
+    KIM::ComputeArguments::SetSimulatorBufferPointer()
+  </td><td>
+    KIM_Model_SetSimulatorBufferPointer()
+    <br>
+    KIM_ComputeArguments_SetSimulatorBufferPointer()
+  </td><td>
+    kim_model_module::kim_set_simulator_buffer_pointer()
+    <br>
+    kim_compute_arguments_module::kim_set_simulator_buffer_pointer()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_model_buffer()
+  </td><td>
+    KIM::ModelCompute::GetModelBufferPointer()
+    <br>
+    KIM::ModelExtension::GetModelBufferPointer()
+    <br>
+    KIM::ModelComputeArguments::GetModelBufferPointer()
+    <br>
+    KIM::ModelDestroy::GetModelBufferPointer()
+    <br>
+    KIM::ModelRefresh::GetModelBufferPointer()
+    <br>
+    KIM::ModelComputeArguments::GetModelBufferPointer()
+    <br>
+    KIM::ModelComputeArgumentsDestroy::GetModelBufferPointer()
+    <br>
+    KIM::ModelWriteParameterizedModel::GetModelBufferPointer()
+  </td><td>
+    KIM_ModelCompute_GetModelBufferPointer()
+    <br>
+    KIM_ModelExtension_GetModelBufferPointer()
+    <br>
+    KIM_ModelComputeArguments_GetModelBufferPointer()
+    <br>
+    KIM_ModelDestroy_GetModelBufferPointer()
+    <br>
+    KIM_ModelRefresh_GetModelBufferPointer()
+    <br>
+    KIM_ModelComputeArguments_GetModelBufferPointer()
+    <br>
+    KIM_ModelComputeArgumentsDestroy_GetModelBufferPointer()
+    <br>
+    KIM_ModelWriteParameterizedModel_GetModelBufferPointer()
+  </td><td>
+    kim_model_compute_module::kim_get_model_buffer_pointer()
+    <br>
+    kim_model_extension_module::kim_get_model_buffer_pointer()
+    <br>
+    kim_model_compute_arguments_module::kim_get_model_buffer_pointer()
+    <br>
+    kim_model_destroy_module::kim_get_model_buffer_pointer()
+    <br>
+    kim_model_refresh_module::kim_get_model_buffer_pointer()
+    <br>
+    kim_model_compute_arguments_module::kim_get_model_buffer_pointer()
+    <br>
+    kim_model_compute_arguments_destroy_module::kim_get_model_buffer_pointer()
+    <br>
+    kim_model_write_parameterized_model_module::kim_get_model_buffer_pointer()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_sim_buffer()
+  </td><td>
+    KIM::Model::GetSimulatorBufferPointer()
+    <br>
+    KIM::ComputeArguments::GetSimulatorBufferPointer()
+  </td><td>
+    KIM_Model_GetSimulatorBufferPointer()
+    <br>
+    KIM_ComputeArguments_GetSimulatorBufferPointer()
+  </td><td>
+    kim_model_module::kim_get_simulator_buffer_pointer()
+    <br>
+    kim_compute_arguments_module::kim_get_simulator_buffer_pointer()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_is_half_neighbors()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_set_data()
+  </td><td>
+    KIM::ComputeArguments::SetArgumentPointer()
+  </td><td>
+    KIM_ComputeArguments_SetArgumentPointerInteger()
+    <br>
+    KIM_ComputeArguments_SetArgumentPointerDouble()
+  </td><td>
+    kim_compute_arguments_module::kim_set_argument_pointer()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelComputeArgumentsCreate::SetArgumentSupportStatus()
+  </td><td>
+    KIM_ModelComputeArgumentsCreate_SetArgumentSupportStatus()
+  </td><td>
+    kim_model_compute_arguments_create_module::kim_set_argument_support_status()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ComputeArguments::GetArgumentSupportStatus()
+  </td><td>
+    KIM_ComputeArguments_GetArgumentSupportStatus()
+  </td><td>
+    kim_compute_arguments_module::kim_get_argument_support_status()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelComputeArgumentsCreate::SetCallbackSupportStatus()
+  </td><td>
+    KIM_ModelComputeArgumentsCreate_SetCallbackSupportStatus()
+  </td><td>
+    kim_model_compute_arguments_create_module::kim_set_callback_support_status()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ComputeArguments::GetCallbackSupportStatus()
+  </td><td>
+    KIM_ComputeArguments_GetCallbackSupportStatus()
+  </td><td>
+    kim_compute_arguments_module::kim_get_callback_support_status()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_set_method()
+  </td><td>
+    KIM::ComputeArguments::SetCallbackPointer()
+  </td><td>
+    KIM_ComputeArguments_SetCallbackPointer()
+  </td><td>
+    kim_compute_arguments_module::kim_set_callback_pointer()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_data()
+  </td><td>
+    KIM::ModelComputeArguments::GetArgumentPointer()
+  </td><td>
+    KIM_ModelComputeArguments_GetArgumentPointerInteger()
+    <br>
+    KIM_ModelComputeArguments_GetArgumentPointerDouble()
+  </td><td>
+    kim_model_compute_arguments_module::kim_get_argument_pointer()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_method()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelComputeArguments::IsCallbackPresent()
+  </td><td>
+    KIM_ModelComputeArguments_IsCallbackPresent()
+  </td><td>
+    kim_model_compute_arguments_module::kim_is_callback_present()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ComputeArguments::AreAllRequiredArgumentsAndCallbacksPresent()
+  </td><td>
+    KIM_ComputeArguments_AreAllRequiredArgumentsAndCallbacksPresent()
+  </td><td>
+    kim_compute_arguments_module::kim_are_all_required_present()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_size()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_rank()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_shape()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_set_shape()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_set_compute()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_compute()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelCreate::SetInfluenceDistancePointer()
+    <br>
+    KIM::ModelDriverCreate::SetInfluenceDistancePointer()
+    <br>
+    KIM::ModelRefresh::SetInfluenceDistancePointer()
+  </td><td>
+    KIM_ModelCreate_SetInfluenceDistancePointer()
+    <br>
+    KIM_ModelDriverCreate_SetInfluenceDistancePointer()
+    <br>
+    KIM_ModelRefresh_SetInfluenceDistancePointer()
+  </td><td>
+    kim_model_create_module::kim_set_influence_distance_pointer()
+    <br>
+    kim_model_driver_create_module::kim_set_influence_distance_pointer()
+    <br>
+    kim_model_refresh_module::kim_set_influence_distance_pointer()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::GetInfluenceDistance()
+  </td><td>
+    KIM_Model_GetInfluenceDistance()
+  </td><td>
+    kim_model_module::kim_get_influence_distance()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::GetNeighborListPointers()
+  </td><td>
+    KIM_Model_GetNeighborListPointers()
+  </td><td>
+    kim_model_module::kim_get_number_of_neighbor_lists()
+    <br>
+    <br>
+    kim_model_module::kim_get_neighbor_list_values()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelCreate::SetNeighborListPointers()
+    <br>
+    KIM::ModelDriverCreate::SetNeighborListPointers()
+    <br>
+    KIM::ModelRefresh::SetNeighborListPointers()
+  </td><td>
+    KIM_ModelCreate_SetNeighborListPointers()
+    <br>
+    KIM_ModelDriverCreate_SetNeighborListPointers()
+    <br>
+    KIM_ModelRefresh_SetNeighborListPointers()
+  </td><td>
+    kim_model_create_module::kim_set_neighbor_list_pointers()
+    <br>
+    kim_model_driver_create_module::kim_set_neighbor_list_pointers()
+    <br>
+    kim_model_refresh_module::kim_set_neighbor_list_pointers()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelCreate::SetRoutinePointer()
+    <br>
+    KIM::ModelDriverCreate::SetRoutinePointer()
+  </td><td>
+    KIM_ModelCreate_SetRoutinePointer()
+    <br>
+    KIM_ModelDriverCreate_SetRoutinePointer()
+  </td><td>
+    kim_model_create_module::kim_set_routine_pointer()
+    <br>
+    kim_model_driver_create_module::kim_set_routine_pointer()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_model_init()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_model_reinit()
+  </td><td>
+    KIM::Model::ClearThenRefresh()
+  </td><td>
+    KIM_Model_ClearThenRefresh()
+  </td><td>
+    kim_model_module::kim_clear_then_refresh()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_num_model_species()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_model_species()
+  </td><td>
+    KIM::Model::GetSpeciesSupportAndCode()
+  </td><td>
+    KIM_Model_GetSpeciesSupportAndCode()
+  </td><td>
+    kim_model_module::kim_get_species_support_and_code()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_num_sim_species()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_sim_species()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelDriverCreate::GetNumberOfParameterFiles()
+  </td><td>
+    KIM_ModelDriverCreate_GetNumberOfParameterFiles()
+  </td><td>
+    kim_model_driver_create_module::kim_get_number_of_parameter_files()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelDriverCreate::GetParameterFileName()
+  </td><td>
+    KIM_ModelDriverCreate_GetParameterFileName()
+  </td><td>
+    kim_model_driver_create_module::kim_get_parameter_file_name()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_num_params()
+  </td><td>
+    KIM::Model::GetNumberOfParameters()
+  </td><td>
+    KIM_Model_GetNumberOfParameters()
+  </td><td>
+    kim_model_module::kim_get_number_of_parameters()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_parameter()
+  </td><td>
+    KIM::Model::GetParameter()
+  </td><td>
+    KIM_Model_GetParameterInteger()
+    <br>
+    KIM_Model_GetParameterDouble()
+  </td><td>
+    kim_model_module::kim_get_parameter()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::SetParameter()
+  </td><td>
+    KIM_Model_SetParameterInteger()
+    <br>
+    KIM_Model_SetParameterDouble()
+  </td><td>
+    kim_model_module::kim_set_parameter()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::GetParameterMetadata()
+  </td><td>
+    KIM_Model_GetParameterMetadata()
+  </td><td>
+    kim_model_module::kim_get_parameter_metadata()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelCreate::SetParameterPointer()
+    <br>
+    KIM::ModelDriverCreate::SetParameterPointer()
+  </td><td>
+    KIM_ModelCreate_SetParameterPointerInteger()
+    <br>
+    KIM_ModelCreate_SetParameterPointerDouble()
+    <br>
+    KIM_ModelDriverCreate_SetParameterPointerInteger()
+    <br>
+    KIM_ModelDriverCreate_SetParameterPointerDouble()
+  </td><td>
+    kim_model_create_module::kim_set_parameter_pointer()
+    <br>
+    kim_model_driver_create_module::kim_set_parameter_pointer()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_num_free_params()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_free_parameter()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_num_fixed_params()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_fixed_parameter()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_NBC_method()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_species_code()
+  </td><td>
+    KIM::Model::GetSpeciesSupportAndCode()
+  </td><td>
+    KIM_Model_GetSpeciesSupportAndCode()
+  </td><td>
+    kim_model_module::kim_get_species_support_and_code()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_set_species_code()
+  </td><td>
+    KIM::ModelCreate::SetSpeciesCode()
+    <br>
+    KIM::ModelDriverCreate::SetSpeciesCode()
+  </td><td>
+    KIM_ModelCreate_SetSpeciesCode()
+    <br>
+    KIM_ModelDriverCreate_SetSpeciesCode()
+  </td><td>
+    kim_model_create_module::kim_set_species_code()
+    <br>
+    kim_model_driver_create_module::kim_set_species_code()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_model_kim_str_len()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_model_kim_str()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_neigh_mode()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_neigh()
+  </td><td>
+    KIM::ModelComputeArguments::GetNeighborList()
+  </td><td>
+    KIM_ModelComputeArguments_GetNeighborList()
+  </td><td>
+    kim_model_compute_arguments_module::kim_get_neighbor_list()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_process_dEdr()
+  </td><td>
+    KIM::ModelComputeArguments::ProcessDEDrTerm()
+  </td><td>
+    KIM_ModelComputeArguments_ProcessDEDrTerm()
+  </td><td>
+    kim_model_compute_arguments_module::kim_process_dedr_term()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_process_d2Edr2()
+  </td><td>
+    KIM::ModelComputeArguments::ProcessD2EDr2Term()
+  </td><td>
+    KIM_ModelComputeArguments_ProcessD2EDr2Term()
+  </td><td>
+    kim_model_compute_arguments_module::kim_process_d2edr2_term()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_status_msg()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_report_error()
+  </td><td>
+    KIM::Log::LogEntry()
+    <br>
+    KIM::ModelCreate::LogEntry()
+    <br>
+    KIM::ModelCompute::LogEntry()
+    <br>
+    KIM::ModelExtension::LogEntry()
+    <br>
+    KIM::ModelRefresh::LogEntry()
+    <br>
+    KIM::ModelDestroy::LogEntry()
+    <br>
+    KIM::ModelComputeArguments::LogEntry()
+    <br>
+    KIM::ModelComputeArgumentsCreate::LogEntry()
+    <br>
+    KIM::ModelComputeArgumentsDestroy::LogEntry()
+    <br>
+    KIM::ModelDriverCreate::LogEntry()
+    <br>
+    KIM::ModelWriteParameterizedModel::LogEntry()
+  </td><td>
+    KIM_Log_LogEntry()
+    <br>
+    KIM_ModelCreate_LogEntry()
+    <br>
+    KIM_ModelCompute_LogEntry()
+    <br>
+    KIM_ModelExtension_LogEntry()
+    <br>
+    KIM_ModelRefresh_LogEntry()
+    <br>
+    KIM_ModelDestroy_LogEntry()
+    <br>
+    KIM_ModelComputeArguments_LogEntry()
+    <br>
+    KIM_ModelComputeArgumentsCreate_LogEntry()
+    <br>
+    KIM_ModelComputeArgumentsDestroy_LogEntry()
+    <br>
+    KIM_ModelDriverCreate_LogEntry()
+    <br>
+    KIM_ModelWriteParameterizedModel_LogEntry()
+  </td><td>
+    kim_log_module::kim_log_entry()
+    <br>
+    kim_model_create_module::kim_log_entry()
+    <br>
+    kim_model_compute_module::kim_log_entry()
+    <br>
+    kim_model_extension_module::kim_log_entry()
+    <br>
+    kim_model_refresh_module::kim_log_entry()
+    <br>
+    kim_model_destroy_module::kim_log_entry()
+    <br>
+    kim_model_compute_arguments_module::kim_log_entry()
+    <br>
+    kim_model_compute_arguments_create_module::kim_log_entry()
+    <br>
+    kim_model_compute_arguments_destroy_module::kim_log_entry()
+    <br>
+    kim_model_driver_create_module::kim_log_entry()
+    <br>
+    kim_model_write_parameterized_model_module::kim_log_entry()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Log::Create()
+  </td><td>
+    KIM_Log_Create()
+  </td><td>
+    kim_log_module::kim_log_create()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Log::Destroy()
+  </td><td>
+    KIM_Log_Destroy()
+  </td><td>
+    kim_log_module::kim_log_destroy()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Log::PushDefaultVerbosity()
+  </td><td>
+    KIM_Log_PushDefaultVerbosity()
+  </td><td>
+    kim_log_module::kim_push_default_verbosity()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Log::PopDefaultVerbosity()
+  </td><td>
+    KIM_Log_PopDefaultVerbosity()
+  </td><td>
+    kim_log_module::kim_pop_default_verbosity()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Log::GetID()
+  </td><td>
+    KIM_Log_GetID()
+  </td><td>
+    kim_log_module::kim_get_id()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Log::SetID()
+  </td><td>
+    KIM_Log_SetID()
+  </td><td>
+    kim_log_module::kim_set_id()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Log::PushVerbosity()
+  </td><td>
+    KIM_Log_PushVerbosity()
+  </td><td>
+    kim_log_module::kim_push_verbosity()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Log::PopVerbosity()
+  </td><td>
+    KIM_Log_PopVerbosity()
+  </td><td>
+    kim_log_module::kim_pop_verbosity()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::SetLogID()
+    <br>
+    KIM::ComputeArguments::SetLogID()
+  </td><td>
+    KIM_Model_SetLogID()
+    <br>
+    KIM_ComputeArguments_SetLogID()
+  </td><td>
+    kim_model_module::kim_set_log_id()
+    <br>
+    kim_compute_arguments_module::kim_set_log_id()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::PushLogVerbosity()
+    <br>
+    KIM::ComputeArguments::PushLogVerbosity()
+  </td><td>
+    KIM_Model_PushLogVerbosity()
+    <br>
+    KIM_ComputeArguments_PushLogVerbosity()
+  </td><td>
+    kim_model_module::kim_push_log_verbosity()
+    <br>
+    kim_compute_arguments_module::kim_push_log_verbosity()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Model::PopLogVerbosity()
+    <br>
+    KIM::ComputeArguments::PopLogVerbosity()
+  </td><td>
+    KIM_Model_PopLogVerbosity()
+    <br>
+    KIM_ComputeArguments_PopLogVerbosity()
+  </td><td>
+    kim_model_module::kim_pop_log_verbosity()
+    <br>
+    kim_compute_arguments_module::kim_pop_log_verbosity()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_scale_conversion()
+  </td><td>
+    KIM::ModelCreate::ConvertUnit()
+    <br>
+    KIM::ModelDriverCreate::ConvertUnit()
+  </td><td>
+    KIM_ModelCreate_ConvertUnit()
+    <br>
+    KIM_ModelDriverCreate_ConvertUnit()
+  </td><td>
+    kim_model_create_module::kim_convert_unit()
+    <br>
+    kim_model_driver_create_module::kim_convert_unit()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_unit_handling()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_unit_length()
+  </td><td>
+    KIM::Model::GetUnits()
+  </td><td>
+    KIM_Model_GetUnits()
+  </td><td>
+    kim_model_module::kim_get_units()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_unit_energy()
+  </td><td>
+    KIM::Model::GetUnits()
+  </td><td>
+    KIM_Model_GetUnits()
+  </td><td>
+    kim_model_module::kim_get_units()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_unit_charge()
+  </td><td>
+    KIM::Model::GetUnits()
+  </td><td>
+    KIM_Model_GetUnits()
+  </td><td>
+    kim_model_module::kim_get_units()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_unit_temperature()
+  </td><td>
+    KIM::Model::GetUnits()
+  </td><td>
+    KIM_Model_GetUnits()
+  </td><td>
+    kim_model_module::kim_get_units()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_unit_time()
+  </td><td>
+    KIM::Model::GetUnits()
+  </td><td>
+    KIM_Model_GetUnits()
+  </td><td>
+    kim_model_module::kim_get_units()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelCreate::SetUnits()
+    <br>
+    KIM::ModelDriverCreate::SetUnits()
+  </td><td>
+    KIM_ModelCreate_SetUnits()
+    <br>
+    KIM_ModelDriverCreate_SetUnits()
+  </td><td>
+    kim_model_create_module::kim_set_units()
+    <br>
+    kim_model_driver_create_module::kim_set_units()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_convert_to_act_unit()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_set_data_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_set_method_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_data_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_method_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_size_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_rank_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_shape_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_set_compute_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_get_compute_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_getm_compute()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_setm_compute()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_getm_compute_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_setm_compute_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_getm_data()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_getm_method()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_setm_data()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_setm_method()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_getm_data_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_getm_method_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_setm_data_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_setm_method_by_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM_API_getm_index()
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtension::GetExtensionID()
+  </td><td>
+    \ref KIM_ModelExtension_GetExtensionID()
+  </td><td>
+    kim_model_extension_module::kim_get_extension_id()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtension::Model()
+  </td><td>
+    \ref KIM_ModelExtension_ToModel()
+  </td><td>
+    kim_model_extension_module::kim_to_model()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtension::ModelCompute()
+  </td><td>
+    \ref KIM_ModelExtension_ToModelCompute()
+  </td><td>
+    kim_model_extension_module::kim_to_model_compute()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtension::ModelCreate()
+  </td><td>
+    \ref KIM_ModelExtension_ToModelCreate()
+  </td><td>
+    kim_model_extension_module::kim_to_model_create()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtension::ModelDestroy()
+  </td><td>
+    \ref KIM_ModelExtension_ToModelDestroy()
+  </td><td>
+    kim_model_extension_module::kim_to_model_destroy()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtension::ModelDriverCreate()
+  </td><td>
+    \ref KIM_ModelExtension_ToModelDriverCreate()
+  </td><td>
+    kim_model_extension_module::kim_to_model_driver_create()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtension::ModelRefresh()
+  </td><td>
+    \ref KIM_ModelExtension_ToModelRefresh()
+  </td><td>
+    kim_model_extension_module::kim_to_model_refresh()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtension::ModelWriteParameterizedModel()
+  </td><td>
+    \ref KIM_ModelExtension_ToModelWriteParameterizedModel()
+  </td><td>
+    kim_model_extension_module::kim_to_model_write_parameterized_model()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtension::ModelComputeArguments()
+  </td><td>
+    \ref KIM_ModelExtension_ToModelComputeArguments()
+  </td><td>
+    kim_model_extension_module::kim_to_model_compute_arguments()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtension::ModelComputeArgumentsCreate()
+  </td><td>
+    \ref KIM_ModelExtension_ToModelComputeArgumentsCreate()
+  </td><td>
+    kim_model_extension_module::kim_to_model_compute_arguments_create()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtension::ModelComputeArgumentsDestroy()
+  </td><td>
+    \ref KIM_ModelExtension_ToModelComputeArgumentsDestroy()
+  </td><td>
+    kim_model_extension_module::kim_to_model_compute_arguments_destroy()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelWriteParameterizedModel::GetPath()
+  </td><td>
+    \ref KIM_ModelWriteParameterizedModel_GetPath()
+  </td><td>
+    kim_model_write_parameterized_model_module::kim_get_path()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelWriteParameterizedModel::GetModelName()
+  </td><td>
+    \ref KIM_ModelWriteParameterizedModel_GetModelName()
+  </td><td>
+    kim_model_write_parameterized_model_module::kim_get_model_name()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelWriteParameterizedModel::SetParameterFileName()
+  </td><td>
+    \ref KIM_ModelWriteParameterizedModel_SetParameterFileName()
+  </td><td>
+    kim_model_write_parameterized_model_module::kim_set_parameter_file_name()
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelWriteParameterizedModel::GetPath()
+  </td><td>
+    \ref KIM_ModelWriteParameterizedModel_GetPath()
+  </td><td>
+    kim_model_write_parameterized_model_module::kim_get_path()
+  </td>
+</tr>
+</table>
+
+  <br><br>
+
+  <b>Extensible enumeration identifier name table \anchor external_enum_id_table :</b>
+<table><caption align=top></caption>
+<tr>
+  <th>
+    kim-api-v1
+  </th><th>
+    kim-api-v2 C++ Binding
+  </th><th>
+    kim-api-v2 C Binding
+  </th><th>
+    kim-api-v2 Fortran Binding
+  </th>
+</tr>
+<tr>
+  <td>
+    "numberOfParticles"
+  </td><td>
+    KIM::COMPUTE_ARGUMENT_NAME::numberOfParticles
+  </td><td>
+    \ref KIM_COMPUTE_ARGUMENT_NAME_numberOfParticles
+  </td><td>
+    kim_compute_argument_name_module::kim_compute_argument_name_number_of_particles
+  </td>
+</tr>
+<tr>
+  <td>
+    "particleSpecies"
+  </td><td>
+    KIM::COMPUTE_ARGUMENT_NAME::particleSpeciesCodes
+  </td><td>
+    \ref KIM_COMPUTE_ARGUMENT_NAME_particleSpeciesCodes
+  </td><td>
+    kim_compute_argument_name_module::kim_compute_argument_name_particle_species_codes
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::COMPUTE_ARGUMENT_NAME::particleContributing
+  </td><td>
+    \ref KIM_COMPUTE_ARGUMENT_NAME_particleContributing
+  </td><td>
+    kim_compute_argument_name_module::kim_compute_argument_name_particle_contributing
+  </td>
+</tr>
+<tr>
+  <td>
+    "coordinates"
+  </td><td>
+    KIM::COMPUTE_ARGUMENT_NAME::coordinates
+  </td><td>
+    \ref KIM_COMPUTE_ARGUMENT_NAME_coordinates
+  </td><td>
+    kim_compute_argument_name_module::kim_compute_argument_name_coordinates
+  </td>
+</tr>
+<tr>
+  <td>
+    "energy"
+  </td><td>
+    KIM::COMPUTE_ARGUMENT_NAME::partialEnergy
+  </td><td>
+    \ref KIM_COMPUTE_ARGUMENT_NAME_partialEnergy
+  </td><td>
+    kim_compute_argument_name_module::kim_compute_argument_name_partial_energy
+  </td>
+</tr>
+<tr>
+  <td>
+    "forces"
+  </td><td>
+    KIM::COMPUTE_ARGUMENT_NAME::partialForces
+  </td><td>
+    \ref KIM_COMPUTE_ARGUMENT_NAME_partialForces
+  </td><td>
+    kim_compute_argument_name_module::kim_compute_argument_name_partial_forces
+  </td>
+</tr>
+<tr>
+  <td>
+    "particleEnergy"
+  </td><td>
+    KIM::COMPUTE_ARGUMENT_NAME::partialParticleEnergy
+  </td><td>
+    \ref KIM_COMPUTE_ARGUMENT_NAME_partialParticleEnergy
+  </td><td>
+    kim_compute_argument_name_module::kim_compute_argument_name_partial_particle_energy
+  </td>
+</tr>
+<tr>
+  <td>
+    "virial"
+  </td><td>
+    KIM::COMPUTE_ARGUMENT_NAME::partialVirial
+  </td><td>
+    \ref KIM_COMPUTE_ARGUMENT_NAME_partialVirial
+  </td><td>
+    kim_compute_argument_name_module::kim_compute_argument_name_partial_virial
+  </td>
+</tr>
+<tr>
+  <td>
+    "particleVirial"
+  </td><td>
+    KIM::COMPUTE_ARGUMENT_NAME::partialParticleVirial
+  </td><td>
+    \ref KIM_COMPUTE_ARGUMENT_NAME_partialParticleVirial
+  </td><td>
+    kim_compute_argument_name_module::kim_compute_argument_name_partial_particle_virial
+  </td>
+</tr>
+<tr>
+  <td>
+    "cutoff"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "numberContributingParticles"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "numberOfSpecies"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "particleCharge"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "particleSize"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "neighObject"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "boxSideLengths"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "temperature"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "hessian"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "PARAM_FREE_cutoff"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "get_neigh"
+  </td><td>
+    KIM::COMPUTE_CALLBACK_NAME::GetNeighborList
+  </td><td>
+    \ref KIM_COMPUTE_CALLBACK_NAME_GetNeighborList
+  </td><td>
+    kim_compute_callback_name_module::kim_compute_callback_name_get_neighbor_list
+  </td>
+</tr>
+<tr>
+  <td>
+    "process_dEdr"
+  </td><td>
+    KIM::COMPUTE_CALLBACK_NAME::ProcessDEDrTerm
+  </td><td>
+    \ref KIM_COMPUTE_CALLBACK_NAME_ProcessDEDrTerm
+  </td><td>
+    kim_compute_callback_name_module::kim_compute_callback_name_process_dedr_term
+  </td>
+</tr>
+<tr>
+  <td>
+    "process_d2Edr2"
+  </td><td>
+    KIM::COMPUTE_CALLBACK_NAME::ProcessD2EDr2Term
+  </td><td>
+    \ref KIM_COMPUTE_CALLBACK_NAME_ProcessD2EDr2Term
+  </td><td>
+    kim_compute_callback_name_module::kim_compute_callback_name_process_d2edr2_term
+  </td>
+</tr>
+<tr>
+  <td>
+    "ZeroBasedLists"
+  </td><td>
+    KIM::NUMBERING::zeroBased
+  </td><td>
+    \ref KIM_NUMBERING_zeroBased
+  </td><td>
+    kim_numbering_module::kim_numbering_zero_based
+  </td>
+</tr>
+<tr>
+  <td>
+    "OneBasedLists"
+  </td><td>
+    KIM::NUMBERING::oneBased
+  </td><td>
+    \ref KIM_NUMBERING_oneBased
+  </td><td>
+    kim_numbering_module::kim_numbering_one_based
+  </td>
+</tr>
+<tr>
+  <td>
+    "Neigh_IterAccess"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "Neigh_LocaAccess"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "Neigh_BothAccess"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "CLUSTER"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "NEIGH_PURE_H"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "NEIGH_PURE_F"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "NEIGH_RVEC_H"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "NEIGH_RVEC_F"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "MI_OPBC_H"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    "MI_OPBC_F"
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td></td>
+  <td></td>
+  <td></td>
+  <td></td>
+</tr>
+<tr>
+  <td>
+    "electron"
+  </td><td>
+    KIM::SPECIES_NAME::electron
+  </td><td>
+    \ref KIM_SPECIES_NAME_electron
+  </td><td>
+    kim_species_name_module::kim_species_name_electron
+  </td>
+</tr>
+<tr>
+  <td>
+    "H"
+  </td><td>
+    KIM::SPECIES_NAME::H
+  </td><td>
+    \ref KIM_SPECIES_NAME_H
+  </td><td>
+    kim_species_name_module::kim_species_name_h
+  </td>
+</tr>
+<tr>
+  <td>
+    "He"
+  </td><td>
+    KIM::SPECIES_NAME::He
+  </td><td>
+    \ref KIM_SPECIES_NAME_He
+  </td><td>
+    kim_species_name_module::kim_species_name_he
+  </td>
+</tr>
+<tr>
+  <td>
+    etc.
+  </td><td>
+    etc.
+  </td><td>
+    etc.
+  </td><td>
+    etc.
+  </td>
+</tr>
+<tr>
+  <td>
+    "user20"
+  </td><td>
+    KIM::SPECIES_NAME::user20
+  </td><td>
+    \ref KIM_SPECIES_NAME_user20
+  </td><td>
+    kim_species_name_module::kim_species_name_user20
+  </td>
+</tr>
+<tr>
+  <td></td>
+  <td></td>
+  <td></td>
+  <td></td>
+</tr>
+<tr>
+  <td>
+    "C"
+  </td><td>
+    KIM::CHARGE_UNIT::C
+  </td><td>
+    \ref KIM_CHARGE_UNIT_C
+  </td><td>
+    kim_charge_unit_module::kim_charge_unit_c
+  </td>
+</tr>
+<tr>
+  <td>
+    "e"
+  </td><td>
+    KIM::CHARGE_UNIT::e
+  </td><td>
+    \ref KIM_CHARGE_UNIT_e
+  </td><td>
+    kim_charge_unit_module::kim_charge_unit_e
+  </td>
+</tr>
+<tr>
+  <td>
+    "statC"
+  </td><td>
+    KIM::CHARGE_UNIT::statC
+  </td><td>
+    \ref KIM_CHARGE_UNIT_statC
+  </td><td>
+    kim_charge_unit_module::kim_charge_unit_statc
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::CHARGE_UNIT::unused
+  </td><td>
+    \ref KIM_CHARGE_UNIT_unused
+  </td><td>
+    kim_charge_unit_module::kim_charge_unit_unused
+  </td>
+</tr>
+<tr>
+  <td>
+    "amu_A2_per_ps2"
+  </td><td>
+    KIM::ENERGY_UNIT::amu_A2_per_ps2
+  </td><td>
+    \ref KIM_ENERGY_UNIT_amu_A2_per_ps2
+  </td><td>
+    kim_energy_unit_module::kim_energy_unit_amu_a2_per_ps2
+  </td>
+</tr>
+<tr>
+  <td>
+    "erg"
+  </td><td>
+    KIM::ENERGY_UNIT::erg
+  </td><td>
+    \ref KIM_ENERGY_UNIT_erg
+  </td><td>
+    kim_energy_unit_module::kim_energy_unit_erg
+  </td>
+</tr>
+<tr>
+  <td>
+    "eV"
+  </td><td>
+    KIM::ENERGY_UNIT::eV
+  </td><td>
+    \ref KIM_ENERGY_UNIT_eV
+  </td><td>
+    kim_energy_unit_module::kim_energy_unit_ev
+  </td>
+</tr>
+<tr>
+  <td>
+    "Hartree"
+  </td><td>
+    KIM::ENERGY_UNIT::Hartree
+  </td><td>
+    \ref KIM_ENERGY_UNIT_Hartree
+  </td><td>
+    kim_energy_unit_module::kim_energy_unit_hartree
+  </td>
+</tr>
+<tr>
+  <td>
+    "J"
+  </td><td>
+    KIM::ENERGY_UNIT::J
+  </td><td>
+    \ref KIM_ENERGY_UNIT_J
+  </td><td>
+    kim_energy_unit_module::kim_energy_unit_j
+  </td>
+</tr>
+<tr>
+  <td>
+    "kcal_mol"
+  </td><td>
+    KIM::ENERGY_UNIT::kcal_mol
+  </td><td>
+    \ref KIM_ENERGY_UNIT_kcal_mol
+  </td><td>
+    kim_energy_unit_module::kim_energy_unit_kcal_mol
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ENERGY_UNIT::unused
+  </td><td>
+    \ref KIM_ENERGY_UNIT_unused
+  </td><td>
+    kim_energy_unit_module::kim_energy_unit_unused
+  </td>
+</tr>
+<tr>
+  <td>
+    "A"
+  </td><td>
+    KIM::LENGTH_UNIT::A
+  </td><td>
+    \ref KIM_LENGTH_UNIT_A
+  </td><td>
+    kim_length_unit_module::kim_length_unit_a
+  </td>
+</tr>
+<tr>
+  <td>
+    "Bohr"
+  </td><td>
+    KIM::LENGTH_UNIT::Bohr
+  </td><td>
+    \ref KIM_LENGTH_UNIT_Bohr
+  </td><td>
+    kim_length_unit_module::kim_length_unit_bohr
+  </td>
+</tr>
+<tr>
+  <td>
+    "cm"
+  </td><td>
+    KIM::LENGTH_UNIT::cm
+  </td><td>
+    \ref KIM_LENGTH_UNIT_cm
+  </td><td>
+    kim_length_unit_module::kim_length_unit_cm
+  </td>
+</tr>
+<tr>
+  <td>
+    "m"
+  </td><td>
+    KIM::LENGTH_UNIT::m
+  </td><td>
+    \ref KIM_LENGTH_UNIT_m
+  </td><td>
+    kim_length_unit_module::kim_length_unit_m
+  </td>
+</tr>
+<tr>
+  <td>
+    "nm"
+  </td><td>
+    KIM::LENGTH_UNIT::nm
+  </td><td>
+    \ref KIM_LENGTH_UNIT_nm
+  </td><td>
+    kim_length_unit_module::kim_length_unit_nm
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::LENGTH_UNIT::unused
+  </td><td>
+    \ref KIM_LENGTH_UNIT_unused
+  </td><td>
+    kim_length_unit_module::kim_length_unit_unused
+  </td>
+</tr>
+<tr>
+  <td>
+    "K"
+  </td><td>
+    KIM::TEMPERATURE_UNIT::K
+  </td><td>
+    \ref KIM_TEMPERATURE_UNIT_K
+  </td><td>
+    kim_temperature_unit_module::kim_temperature_unit_k
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::TEMPERATURE_UNIT::unused
+  </td><td>
+    \ref KIM_TEMPERATURE_UNIT_unused
+  </td><td>
+    kim_temperature_unit_module::kim_temperature_unit_unused
+  </td>
+</tr>
+<tr>
+  <td>
+    "fs"
+  </td><td>
+    KIM::TIME_UNIT::fs
+  </td><td>
+    \ref KIM_TIME_UNIT_fs
+  </td><td>
+    kim_time_unit_module::kim_time_unit_fs
+  </td>
+</tr>
+<tr>
+  <td>
+    "ps"
+  </td><td>
+    KIM::TIME_UNIT::ps
+  </td><td>
+    \ref KIM_TIME_UNIT_ps
+  </td><td>
+    kim_time_unit_module::kim_time_unit_ps
+  </td>
+</tr>
+<tr>
+  <td>
+    "ns"
+  </td><td>
+    KIM::TIME_UNIT::ns
+  </td><td>
+    \ref KIM_TIME_UNIT_ns
+  </td><td>
+    kim_time_unit_module::kim_time_unit_ns
+  </td>
+</tr>
+<tr>
+  <td>
+    "s"
+  </td><td>
+    KIM::TIME_UNIT::s
+  </td><td>
+    \ref KIM_TIME_UNIT_s
+  </td><td>
+    kim_time_unit_module::kim_time_unit_s
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::TIME_UNIT::unused
+  </td><td>
+    \ref KIM_TIME_UNIT_unused
+  </td><td>
+    kim_time_unit_module::kim_time_unit_unused
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::DATA_TYPE::Integer
+  </td><td>
+    \ref KIM_DATA_TYPE_Integer
+  </td><td>
+    kim_data_type_module::kim_data_type_integer
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::DATA_TYPE::Double
+  </td><td>
+    \ref KIM_DATA_TYPE_Double
+  </td><td>
+    kim_data_type_module::kim_data_type_double
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::LANGUAGE_NAME::cpp
+  </td><td>
+    \ref KIM_LANGUAGE_NAME_cpp
+  </td><td>
+    kim_language_name_module::kim_language_name_cpp
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::LANGUAGE_NAME::c
+  </td><td>
+    \ref KIM_LANGUAGE_NAME_c
+  </td><td>
+    kim_language_name_module::kim_language_name_c
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::LANGUAGE_NAME::fortran
+  </td><td>
+    \ref KIM_LANGUAGE_NAME_fortran
+  </td><td>
+    kim_language_name_module::kim_language_name_fortran
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::LOG_VERBOSITY::silent
+  </td><td>
+    \ref KIM_LOG_VERBOSITY_silent
+  </td><td>
+    kim_log_verbosity_module::kim_log_verbosity_silent
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::LOG_VERBOSITY::fatal
+  </td><td>
+    \ref KIM_LOG_VERBOSITY_fatal
+  </td><td>
+    kim_log_verbosity_module::kim_log_verbosity_fatal
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::LOG_VERBOSITY::error
+  </td><td>
+    \ref KIM_LOG_VERBOSITY_error
+  </td><td>
+    kim_log_verbosity_module::kim_log_verbosity_error
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::LOG_VERBOSITY::warning
+  </td><td>
+    \ref KIM_LOG_VERBOSITY_warning
+  </td><td>
+    kim_log_verbosity_module::kim_log_verbosity_warning
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::LOG_VERBOSITY::information
+  </td><td>
+    \ref KIM_LOG_VERBOSITY_information
+  </td><td>
+    kim_log_verbosity_module::kim_log_verbosity_information
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::LOG_VERBOSITY::debug
+  </td><td>
+    \ref KIM_LOG_VERBOSITY_debug
+  </td><td>
+    kim_log_verbosity_module::kim_log_verbosity_debug
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::SUPPORT_STATUS::requiredByAPI
+  </td><td>
+    \ref KIM_SUPPORT_STATUS_requiredByAPI
+  </td><td>
+    kim_support_status_module::kim_support_status_required_by_api
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::SUPPORT_STATUS::notSupported
+  </td><td>
+    \ref KIM_SUPPORT_STATUS_notSupported
+  </td><td>
+    kim_support_status_module::kim_support_status_not_supported
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::SUPPORT_STATUS::required
+  </td><td>
+    \ref KIM_SUPPORT_STATUS_required
+  </td><td>
+    kim_support_status_module::kim_support_status_required
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::SUPPORT_STATUS::optional
+  </td><td>
+    \ref KIM_SUPPORT_STATUS_optional
+  </td><td>
+    kim_support_status_module::kim_support_status_optional
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::MODEL_ROUTINE_NAME::Create
+  </td><td>
+    \ref KIM_MODEL_ROUTINE_NAME_Create
+  </td><td>
+    kim_model_routine_name_module::kim_model_routine_name_create
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::MODEL_ROUTINE_NAME::ComputeArgumentsCreate
+  </td><td>
+    \ref KIM_MODEL_ROUTINE_NAME_ComputeArgumentsCreate
+  </td><td>
+    kim_model_routine_name_module::kim_model_routine_name_compute_arguments_create
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::MODEL_ROUTINE_NAME::Compute
+  </td><td>
+    \ref KIM_MODEL_ROUTINE_NAME_Compute
+  </td><td>
+    kim_model_routine_name_module::kim_model_routine_name_compute
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::MODEL_ROUTINE_NAME::Extension
+  </td><td>
+    \ref KIM_MODEL_ROUTINE_NAME_Extension
+  </td><td>
+    kim_model_routine_name_module::kim_model_routine_name_extension
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::MODEL_ROUTINE_NAME::Refresh
+  </td><td>
+    \ref KIM_MODEL_ROUTINE_NAME_Refresh
+  </td><td>
+    kim_model_routine_name_module::kim_model_routine_name_refresh
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::MODEL_ROUTINE_NAME::WriteParameterizedModel
+  </td><td>
+    \ref KIM_MODEL_ROUTINE_NAME_WriteParameterizedModel
+  </td><td>
+    kim_model_routine_name_module::kim_model_routine_name_write_parameterized_model
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::MODEL_ROUTINE_NAME::ComputeArgumentsDestroy
+  </td><td>
+    \ref KIM_MODEL_ROUTINE_NAME_ComputeArgumentsDestroy
+  </td><td>
+    kim_model_routine_name_module::kim_model_routine_name_compute_arguments_destroy
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::MODEL_ROUTINE_NAME::Destroy
+  </td><td>
+    \ref KIM_MODEL_ROUTINE_NAME_Destroy
+  </td><td>
+    kim_model_routine_name_module::kim_model_routine_name_destroy
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::Function()
+  </td><td>
+    KIM_Function()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelCreateFunction()
+  </td><td>
+    KIM_ModelCreateFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelDriverCreateFunction()
+  </td><td>
+    KIM_ModelDriverCreateFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelComputeArgumentsCreateFunction()
+  </td><td>
+    KIM_ModelComputeArgumentsCreateFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelComputeFunction()
+  </td><td>
+    KIM_ModelComputeFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelExtensionFunction()
+  </td><td>
+    KIM_ModelExtensionFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelWriteParameterizedModelFunction()
+  </td><td>
+    KIM_ModelWriteParameterizedModelFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::GetNeighborListFunction()
+  </td><td>
+    KIM_GetNeighborListFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ProcessDEDrTermFunction()
+  </td><td>
+    KIM_ProcessDEDrTermFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ProcessD2EDr2TermFunction()
+  </td><td>
+    KIM_ProcessD2EDr2TermFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelRefreshFunction()
+  </td><td>
+    KIM_ModelRefreshFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelComputeArgumentsDestroyFunction()
+  </td><td>
+    KIM_ModelComputeArgumentsDestroyFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+<tr>
+  <td>
+    N/A
+  </td><td>
+    KIM::ModelDestroyFunction()
+  </td><td>
+    KIM_ModelDestroyFunction()
+  </td><td>
+    N/A
+  </td>
+</tr>
+</table>
+
+  <br><br>
+
+  <b>Extensible enumeration discovery and comparison routine identifier name table \anchor external_enum_discovery_table :</b>
+<table><caption></caption>
+<tr>
+  <th>
+    kim-api-v2 C++ Binding
+  </th><th>
+    kim-api-v2 C Binding
+  </th><th>
+    kim-api-v2 Fortran Binding
+  </th>
+</tr>
+<tr>
+  <td>
+    KIM::ChargeUnit::ChargeUnit()
+    <br>
+    KIM::ChargeUnit::ChargeUnit(int const)
+    <br>
+    KIM::ChargeUnit::ChargeUnit(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_ChargeUnit_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_charge_unit_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ChargeUnit::operator==()
+  </td><td>
+    \ref KIM_ChargeUnit_Equal()
+  </td><td>
+    kim_charge_unit_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ChargeUnit::operator!=()
+  </td><td>
+    \ref KIM_ChargeUnit_NotEqual()
+  </td><td>
+    kim_charge_unit_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ChargeUnit::ToString()
+  </td><td>
+    KIM_ChargeUnit_ToString()
+  </td><td>
+    kim_charge_unit_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::CHARGE_UNIT::GetNumberOfChargeUnits()
+  </td><td>
+    KIM_CHARGE_UNIT_GetNumberOfChargeUnits()
+  </td><td>
+    kim_charge_unit_module::kim_get_number_of_charge_units()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::CHARGE_UNIT::GetChargeUnit()
+  </td><td>
+    KIM_CHARGE_UNIT_GetChargeUnit()
+  </td><td>
+    kim_charge_unit_module::kim_get_charge_unit()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ModelRoutineName::ModelRoutineName()
+    <br>
+    KIM::ModelRoutineName::ModelRoutineName(int const)
+    <br>
+    KIM::ModelRoutineName::ModelRoutineName(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_ModelRoutineName_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_model_routine_name_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ModelRoutineName::operator==()
+  </td><td>
+    \ref KIM_ModelRoutineName_Equal()
+  </td><td>
+    kim_model_routine_name_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ModelRoutineName::operator!=()
+  </td><td>
+    \ref KIM_ModelRoutineName_NotEqual()
+  </td><td>
+    kim_model_routine_name_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ModelRoutineName::ToString()
+  </td><td>
+    KIM_ModelRoutineName_ToString()
+  </td><td>
+    kim_model_routine_name_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::MODEL_ROUTINE_NAME::GetNumberOfModelRoutineNames()
+  </td><td>
+    KIM_MODEL_ROUTINE_NAME_GetNumberOfModelRoutineNames()
+  </td><td>
+    kim_model_routein_name_module::kim_get_number_of_model_routine_names()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::MODEL_ROUTINE_NAME::GetModelRoutineName()
+  </td><td>
+    KIM_MODEL_ROUTINE_NAME_GetModelRoutineName()
+  </td><td>
+    kim_model_routine_name_module::kim_get_compute_argument_name()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ComputeArgumentName::ComputeArgumentName()
+    <br>
+    KIM::ComputeArgumentName::ComputeArgumentName(int const)
+    <br>
+    KIM::ComputeArgumentName::ComputeArgumentName(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_ComputeArgumentName_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_compute_argument_name_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ComputeArgumentName::operator==()
+  </td><td>
+    \ref KIM_ComputeArgumentName_Equal()
+  </td><td>
+    kim_compute_argument_name_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ComputeArgumentName::operator!=()
+  </td><td>
+    \ref KIM_ComputeArgumentName_NotEqual()
+  </td><td>
+    kim_compute_argument_name_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ComputeArgumentName::ToString()
+  </td><td>
+    KIM_ComputeArgumentName_ToString()
+  </td><td>
+    kim_compute_argument_name_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::COMPUTE_ARGUMENT_NAME::GetNumberOfComputeArgumentNames()
+  </td><td>
+    KIM_COMPUTE_ARGUMENT_NAME_GetNumberOfComputeArgumentNames()
+  </td><td>
+    kim_compute_argument_name_module::kim_get_number_of_compute_argument_names()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::COMPUTE_ARGUMENT_NAME::GetComputeArgumentName()
+  </td><td>
+    KIM_COMPUTE_ARGUMENT_NAME_GetComputeArgumentName()
+  </td><td>
+    kim_compute_argument_name_module::kim_get_compute_argument_name()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::COMPUTE_ARGUMENT_NAME::GetComputeArgumentDataType()
+  </td><td>
+    KIM_COMPUTE_ARGUMENT_NAME_GetComputeArgumentDataType()
+  </td><td>
+    kim_compute_argument_name_module::kim_get_compute_argument_data_type()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ComputeCallbackName::ComputeCallbackName()
+    <br>
+    KIM::ComputeCallbackName::ComputeCallbackName(int const)
+    <br>
+    KIM::ComputeCallbackName::ComputeCallbackName(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_ComputeCallbackName_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_compute_callback_name_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ComputeCallbackName::operator==()
+  </td><td>
+    \ref KIM_ComputeCallbackName_Equal()
+  </td><td>
+    kim_compute_callback_name_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ComputeCallbackName::operator!=()
+  </td><td>
+    \ref KIM_ComputeCallbackName_NotEqual()
+  </td><td>
+    kim_compute_callback_name_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ComputeCallbackName::ToString()
+  </td><td>
+    KIM_ComputeCallbackName_ToString()
+  </td><td>
+    kim_compute_callback_name_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::COMPUTE_CALLBACK_NAME::GetNumberOfComputeCallbackNames()
+  </td><td>
+    KIM_COMPUTE_CALLBACK_NAME_GetNumberOfComputeCallbackNames()
+  </td><td>
+    kim_compute_callback_name_module::kim_get_number_of_compute_callback_names()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::COMPUTE_CALLBACK_NAME::GetComputeCallbackName()
+  </td><td>
+    KIM_COMPUTE_CALLBACK_NAME_GetComputeCallbackName()
+  </td><td>
+    kim_compute_callback_name_module::kim_get_compute_callback_name()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::DataType::DataType()
+    <br>
+    KIM::DataType::DataType(int const)
+    <br>
+    KIM::DataType::DataType(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_DataType_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_data_type_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::DataType::operator==()
+  </td><td>
+    \ref KIM_DataType_Equal()
+  </td><td>
+    kim_data_type_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::DataType::operator!=()
+  </td><td>
+    \ref KIM_DataType_NotEqual()
+  </td><td>
+    kim_data_type_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::DataType::ToString()
+  </td><td>
+    KIM_DataType_ToString()
+  </td><td>
+    kim_data_type_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::DATA_TYPE::GetNumberOfDataTypes()
+  </td><td>
+    KIM_DATA_TYPE_GetNumberOfDataTypes()
+  </td><td>
+    kim_data_type_module::kim_get_number_of_data_types()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::DATA_TYPE::GetDataType()
+  </td><td>
+    KIM_DATA_TYPE_GetDataType()
+  </td><td>
+    kim_data_type_module::kim_get_data_type()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::EnergyUnit::EnergyUnit()
+    <br>
+    KIM::EnergyUnit::EnergyUnit(int const)
+    <br>
+    KIM::EnergyUnit::EnergyUnit(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_EnergyUnit_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_energy_unit_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::EnergyUnit::operator==()
+  </td><td>
+    \ref KIM_EnergyUnit_Equal()
+  </td><td>
+    kim_energy_unit_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::EnergyUnit::operator!=()
+  </td><td>
+    \ref KIM_EnergyUnit_NotEqual()
+  </td><td>
+    kim_energy_unit_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::EnergyUnit::ToString()
+  </td><td>
+    KIM_EnergyUnit_ToString()
+  </td><td>
+    kim_energy_unit_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ENERGY_UNIT::GetNumberOfEnergyUnits()
+  </td><td>
+    KIM_ENERGY_UNIT_GetNumberOfEnergyUnits()
+  </td><td>
+    kim_energy_unit_module::kim_get_number_of_energy_units()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::ENERGY_UNIT::GetEnergyUnit()
+  </td><td>
+    KIM_ENERGY_UNIT_GetEnergyUnit()
+  </td><td>
+    kim_energy_unit_module::kim_get_energy_unit()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LanguageName::LanguageName()
+    <br>
+    KIM::LanguageName::LanguageName(int const)
+    <br>
+    KIM::LanguageName::LanguageName(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_LanguageName_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_language_name_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LanguageName::operator==()
+  </td><td>
+    \ref KIM_LanguageName_Equal()
+  </td><td>
+    kim_language_name_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LanguageName::operator!=()
+  </td><td>
+    \ref KIM_LanguageName_NotEqual()
+  </td><td>
+    kim_language_name_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LanguageName::ToString()
+  </td><td>
+    KIM_LanguageName_ToString()
+  </td><td>
+    kim_language_name_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LANGUAGE_NAME::GetNumberOfLanguageNames()
+  </td><td>
+    KIM_LANGUAGE_NAME_GetNumberOfLanguageNames()
+  </td><td>
+    kim_language_name_module::kim_get_number_of_language_names()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LANGUAGE_NAME::GetLanguageName()
+  </td><td>
+    KIM_LANGUAGE_NAME_GetLanguageName()
+  </td><td>
+    kim_language_name_module::kim_get_language_name()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LengthUnit::LengthUnit()
+    <br>
+    KIM::LengthUnit::LengthUnit(int const)
+    <br>
+    KIM::LengthUnit::LengthUnit(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_LengthUnit_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_length_unit_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LengthUnit::operator==()
+  </td><td>
+    \ref KIM_LengthUnit_Equal()
+  </td><td>
+    kim_length_unit_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LengthUnit::operator!=()
+  </td><td>
+    \ref KIM_LengthUnit_NotEqual()
+  </td><td>
+    kim_length_unit_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LengthUnit::ToString()
+  </td><td>
+    KIM_LengthUnit_ToString()
+  </td><td>
+    kim_length_unit_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LENGTH_UNIT::GetNumberOfLengthUnits()
+  </td><td>
+    KIM_LENGTH_UNIT_GetNumberOfLengthUnits()
+  </td><td>
+    kim_length_unit_module::kim_get_number_of_length_units()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LENGTH_UNIT::GetLengthUnit()
+  </td><td>
+    KIM_LENGTH_UNIT_GetLengthUnit()
+  </td><td>
+    kim_length_unit_module::kim_get_length_unit()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LogVerbosity::LogVerbosity()
+    <br>
+    KIM::LogVerbosity::LogVerbosity(int const)
+    <br>
+    KIM::LogVerbosity::LogVerbosity(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_LogVerbosity_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_log_verbosity_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LogVerbosity::operator<()
+  </td><td>
+    \ref KIM_LogVerbosity_LessThan()
+  </td><td>
+    kim_log_verbosity_module::operator(.lt.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LogVerbosity::operator>()
+  </td><td>
+    \ref KIM_LogVerbosity_GreaterThan()
+  </td><td>
+    kim_log_verbosity_module::operator(.gt.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LogVerbosity::operator<=()
+  </td><td>
+    \ref KIM_LogVerbosity_LessThanEqual()
+  </td><td>
+    kim_log_verbosity_module::operator(.le.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LogVerbosity::operator>=()
+  </td><td>
+    \ref KIM_LogVerbosity_GreaterThanEqual()
+  </td><td>
+    kim_log_verbosity_module::operaotr(.ge.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LogVerbosity::operator==()
+  </td><td>
+    \ref KIM_LogVerbosity_Equal()
+  </td><td>
+    kim_log_verbosity_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LogVerbosity::operator!=()
+  </td><td>
+    \ref KIM_LogVerbosity_NotEqual()
+  </td><td>
+    kim_log_verbosity_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LogVerbosity::ToString()
+  </td><td>
+    KIM_LogVerbosity_ToString()
+  </td><td>
+    kim_log_verbosity_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LOG_VERBOSITY::GetNumberOfLogVerbosities()
+  </td><td>
+    KIM_LOG_VERBOSITY_GetNumberOfLogVerbosities()
+  </td><td>
+    kim_log_verbosity_module::kim_get_number_of_log_verbosities()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::LOG_VERBOSITY::GetLogVerbosity()
+  </td><td>
+    KIM_LOG_VERBOSITY_GetLogVerbosity()
+  </td><td>
+    kim_log_verbosity_module::kim_get_log_verbosity()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::Numbering::Numbering()
+    <br>
+    KIM::Numbering::Numbering(int const)
+    <br>
+    KIM::Numbering::Numbering(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_Numbering_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_numbering_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::Numbering::operator==()
+  </td><td>
+    \ref KIM_Numbering_Equal()
+  </td><td>
+    kim_numbering_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::Numbering::operator!=()
+  </td><td>
+    \ref KIM_Numbering_NotEqual()
+  </td><td>
+    kim_numbering_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::Numbering::ToString()
+  </td><td>
+    KIM_Numbering_ToString()
+  </td><td>
+    kim_numbering_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::NUMBERING::GetNumberOfNumberings()
+  </td><td>
+    KIM_NUMBERING_GetNumberOfNumberings()
+  </td><td>
+    kim_numbering_module::kim_get_number_of_numberings()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::NUMBERING::GetNumbering()
+  </td><td>
+    KIM_NUMBERING_GetNumbering()
+  </td><td>
+    kim_numbering_module::kim_get_numbering()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SpeciesName::SpeciesName()
+    <br>
+    KIM::SpeciesName::SpeciesName(int const)
+    <br>
+    KIM::SpeciesName::SpeciesName(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_SpeciesName_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_species_name_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SpeciesName::operator==()
+  </td><td>
+    \ref KIM_SpeciesName_Equal()
+  </td><td>
+    kim_species_name_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SpeciesName::operator!=()
+  </td><td>
+    \ref KIM_SpeciesName_NotEqual()
+  </td><td>
+    kim_species_name_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SpeciesName::ToString()
+  </td><td>
+    KIM_SpeciesName_ToString()
+  </td><td>
+    kim_species_name_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SPECIES_NAME::GetNumberOfSpeciesNames()
+  </td><td>
+    KIM_SPECIES_NAME_GetNumberOfSpeciesNames()
+  </td><td>
+    kim_species_name_module::kim_get_number_of_species_names()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SPECIES_NAME::GetSpeciesName()
+  </td><td>
+    KIM_SPECIES_NAME_GetSpeciesName()
+  </td><td>
+    kim_species_name_module::kim_get_species_name()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SupportStatus::SupportStatus()
+    <br>
+    KIM::SupportStatus::SupportStatus(int const)
+    <br>
+    KIM::SupportStatus::SupportStatus(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_SupportStatus_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_support_status_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SupportStatus::operator==()
+  </td><td>
+    \ref KIM_SupportStatus_Equal()
+  </td><td>
+    kim_support_status_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SupportStatus::operator!=()
+  </td><td>
+    \ref KIM_SupportStatus_NotEqual()
+  </td><td>
+    kim_support_status_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SupportStatus::ToString()
+  </td><td>
+    KIM_SupportStatus_ToString()
+  </td><td>
+    kim_support_status_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SUPPORT_STATUS::GetNumberOfSupportStatuses()
+  </td><td>
+    KIM_SUPPORT_STATUS_GetNumberOfSupportStatuses()
+  </td><td>
+    kim_support_status_module::kim_get_number_of_support_statuses()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::SUPPORT_STATUS::GetSupportStatus()
+  </td><td>
+    KIM_SUPPORT_STATUS_GetSupportStatus()
+  </td><td>
+    kim_support_status_module::kim_get_support_status()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TemperatureUnit::TemperatureUnit()
+    <br>
+    KIM::TemperatureUnit::TemperatureUnit(int const)
+    <br>
+    KIM::TemperatureUnit::TemperatureUnit(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_TemperatureUnit_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_temperature_unit_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TemperatureUnit::operator==()
+  </td><td>
+    \ref KIM_TemperatureUnit_Equal()
+  </td><td>
+    kim_temperature_unit_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TemperatureUnit::operator!=()
+  </td><td>
+    \ref KIM_TemperatureUnit_NotEqual()
+  </td><td>
+    kim_temperature_unit_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TemperatureUnit::ToString()
+  </td><td>
+    KIM_TemperatureUnit_ToString()
+  </td><td>
+    kim_temperature_unit_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TEMPERATURE_UNIT::GetNumberOfTemperatureUnits()
+  </td><td>
+    KIM_TEMPERATURE_UNIT_GetNumberOfTemperatureUnits()
+  </td><td>
+    kim_temperature_unit_module::kim_get_number_of_temperature_units()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TEMPERATURE_UNIT::GetTemperatureUnit()
+  </td><td>
+    KIM_TEMPERATURE_UNIT_GetTemperatureUnit()
+  </td><td>
+    kim_temperature_unit_module::kim_get_temperature_unit()
+  </td>
+</tr>
+<tr>
+  <td>
+  </td><td>
+  </td><td>
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TimeUnit::TimeUnit()
+    <br>
+    KIM::TimeUnit::TimeUnit(int const)
+    <br>
+    KIM::TimeUnit::TimeUnit(std::string const &)
+  </td><td>
+    <br>
+    <br>
+    KIM_TimeUnit_FromString()
+  </td><td>
+    <br>
+    <br>
+    kim_time_unit_module::kim_from_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TimeUnit::operator==()
+  </td><td>
+    \ref KIM_TimeUnit_Equal()
+  </td><td>
+    kim_time_unit_module::operator(.eq.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TimeUnit::operator!=()
+  </td><td>
+    \ref KIM_TimeUnit_NotEqual()
+  </td><td>
+    kim_time_unit_module::operator(.ne.)
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TimeUnit::ToString()
+  </td><td>
+    KIM_TimeUnit_ToString()
+  </td><td>
+    kim_time_unit_module::kim_to_string()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TIME_UNIT::GetNumberOfTimeUnits()
+  </td><td>
+    KIM_TIME_UNIT_GetNumberOfTimeUnits()
+  </td><td>
+    kim_time_unit_module::kim_get_number_of_time_units()
+  </td>
+</tr>
+<tr>
+  <td>
+    KIM::TIME_UNIT::GetTimeUnit()
+  </td><td>
+    KIM_TIME_UNIT_GetTimeUnit()
+  </td><td>
+    kim_time_unit_module::kim_get_time_unit()
+  </td>
+</tr>
+</table>
+
+Next Seciton: [Browse files](files.html).
+
+*/
+
+LocalWords:  yyyy Ellad Tadmor kim api NBCs miopbc rvec api's ref init tr
+LocalWords:  particleContributing ModelCreate rightarrow SetCallbackPointer td
+LocalWords:  prerelease metadata sim reinit num params str len dEdr Edr msg br
+LocalWords:  getm setm numberOfParticles ModelComputeArgumentsCreate SEM VER
+LocalWords:  GetNumberOfParameters SetModelNumbering ModelDriverCreate dedr MI
+LocalWords:  ComputeArgumentsCreate ComputeArgumentsDestroy GetSemVer ToString
+LocalWords:  ParseSemVer IsLessThan ComputeArguments ModelCompute ModelDestroy
+LocalWords:  ModelComputeArguments ModelComputeArgumentsDestroy ModelRefresh
+LocalWords:  SetModelBufferPointer SetSimulatorBufferPointer IsCallbackPresent
+LocalWords:  GetModelBufferPointer GetSimulatorBufferPointer SetRefreshPointer
+LocalWords:  SetArgumentPointerInteger SetArgumentPointerDouble SetSpeciesCode
+LocalWords:  SetArgumentSupportStatus GetArgumentSupportStatus GetNeighborList
+LocalWords:  SetCallbackSupportStatus GetCallbackSupportStatus ProcessDEDrTerm
+LocalWords:  GetArgumentPointerInteger GetArgumentPointerDouble ProcessD EDr
+LocalWords:  AreAllRequiredArgumentsAndCallbacksPresent GetInfluenceDistance
+LocalWords:  SetInfluenceDistancePointer GetNeighborListPointers edr LogEntry
+LocalWords:  SetNeighborListPointers SetDestroyPointer SetComputePointer GetID
+LocalWords:  SetComputeArgumentsCreatePointer ClearThenRefresh SetID SetLogID
+LocalWords:  SetComputeArgumentsDestroyPointer GetSpeciesSupportAndCode virial
+LocalWords:  GetNumberOfParameterFiles GetParameterFileName GetParameterDouble
+LocalWords:  GetParameterInteger SetParameterInteger SetParameterDouble PARAM
+LocalWords:  GetParameterMetadata SetParameterPointerInteger PushVerbosity amu
+LocalWords:  SetParameterPointerDouble PopVerbosity PushLogVerbosity GetUnits
+LocalWords:  PopLogVerbosity ConvertUnit SetUnits particleSpecies particleSize
+LocalWords:  particleSpeciesCodes partialEnergy partialForces particleEnergy
+LocalWords:  partialParticleEnergy partialVirial particleVirial particleCharge
+LocalWords:  partialParticleVirial numberContributingParticles numberOfSpecies
+LocalWords:  neighObject boxSideLengths hessian ZeroBasedLists zeroBased OPBC
+LocalWords:  OneBasedLists oneBased IterAccess LocaAccess BothAccess statC ps
+LocalWords:  erg eV Hartree mol fs ns cpp fortran requiredByAPI notSupported
+LocalWords:  ModelCreateFunction ModelDriverCreateFunction TermFunction int eq
+LocalWords:  ModelComputeArgumentsCreateFunction ModelComputeFunction NotEqual
+LocalWords:  GetNeighborListFunction ProcessDEDrTermFunction ChargeUnit ne lt
+LocalWords:  ModelRefreshFunction ModelComputeArgumentsDestroyFunction gt le
+LocalWords:  ModelDestroyFunction FromString GetNumberOfChargeUnits DataType
+LocalWords:  GetChargeUnit ComputeArgumentName GetNumberOfComputeArgumentNames
+LocalWords:  GetComputeArgumentName GetComputeArgumentDataType GetDataType ge
+LocalWords:  ComputeCallbackName GetNumberOfComputeCallbackNames EnergyUnit em
+LocalWords:  GetComputeCallbackName GetNumberOfDataTypes GetEnergyUnit Seciton
+LocalWords:  GetNumberOfEnergyUnits LanguageName GetNumberOfLanguageNames html
+LocalWords:  GetLanguageName LengthUnit GetNumberOfLengthUnits GetLengthUnit
+LocalWords:  LogVerbosity LessThan GreaterThan LessThanEqual GreaterThanEqual
+LocalWords:  GetNumberOfLogVerbosities GetLogVerbosity GetNumberOfNumberings
+LocalWords:  GetNumbering SpeciesName GetNumberOfSpeciesNames GetSpeciesName
+LocalWords:  SupportStatus GetNumberOfSupportStatuses GetSupportStatus ToModel
+LocalWords:  TemperatureUnit GetNumberOfTemperatureUnits GetTemperatureUnit
+LocalWords:  TimeUnit GetNumberOfTimeUnits GetTimeUnit IsRoutinePresent const
+LocalWords:  ModelExtension WriteParameterizedModel SetRoutinePointer GetPath
+LocalWords:  PushDefaultVerbosity PopDefaultVerbosity GetExtensionID enum
+LocalWords:  ToModelCompute ToModelCreate ToModelDestroy ToModelDriverCreate
+LocalWords:  ToModelRefresh ToModelWriteParameterizedModel GetModelName
+LocalWords:  ToModelComputeArguments ToModelComputeArgumentsCreate
+LocalWords:  ToModelComputeArgumentsDestroy ModelWriteParameterizedModel
+LocalWords:  SetParameterFileName ModelExtensionFunction ModelRoutineName
+LocalWords:  ModelWriteParameterizedModelFunction GetNumberOfModelRoutineNames
+LocalWords:  GetModelRoutineName

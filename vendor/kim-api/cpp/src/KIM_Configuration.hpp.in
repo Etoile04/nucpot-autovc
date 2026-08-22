@@ -1,0 +1,78 @@
+//
+// KIM-API: An API for interatomic models
+// Copyright (c) 2013--2022, Regents of the University of Minnesota.
+// All rights reserved.
+//
+// Contributors:
+//    Ryan S. Elliott
+//
+// SPDX-License-Identifier: LGPL-2.1-or-later
+//
+// This library is free software; you can redistribute it and/or
+// modify it under the terms of the GNU Lesser General Public
+// License as published by the Free Software Foundation; either
+// version 2.1 of the License, or (at your option) any later version.
+//
+// This library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with this library; if not, write to the Free Software Foundation,
+// Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+//
+
+//
+// Release: This file is part of the kim-api-2.4.2 package.
+//
+
+
+#ifndef KIM_CONFIGURATION_HPP_
+#define KIM_CONFIGURATION_HPP_
+
+#define KIM_PROJECT_NAME "@PROJECT_NAME@"
+
+
+#define KIM_UID "@KIM_API_UID@"
+
+
+#define KIM_SHARED_LIBRARY_PREFIX "@CMAKE_SHARED_LIBRARY_PREFIX@"
+#define KIM_SHARED_LIBRARY_SUFFIX "@CMAKE_SHARED_LIBRARY_SUFFIX@"
+#define KIM_SHARED_MODULE_PREFIX "@CMAKE_SHARED_MODULE_PREFIX@"
+#define KIM_SHARED_MODULE_SUFFIX "@CMAKE_SHARED_MODULE_SUFFIX@"
+
+
+#define KIM_USER_CONFIGURATION_FILE "@KIM_API_USER_CONFIGURATION_FILE@"
+#define KIM_ENVIRONMENT_CONFIGURATION_FILE \
+  "@KIM_API_ENVIRONMENT_CONFIGURATION_FILE@"
+
+#define KIM_USER_MODEL_DRIVERS_DIR_DEFAULT \
+  "@KIM_API_USER_MODEL_DRIVERS_DIR_DEFAULT@"
+#define KIM_MODEL_DRIVER_IDENTIFIER "@KIM_API_MODEL_DRIVER_IDENTIFIER@"
+#define KIM_MODEL_DRIVER_PLURAL_DIR_IDENTIFIER \
+  "@KIM_API_MODEL_DRIVER_PLURAL_DIR_IDENTIFIER@"
+#define KIM_ENVIRONMENT_MODEL_DRIVER_PLURAL_DIR \
+  "@KIM_API_ENVIRONMENT_MODEL_DRIVER_PLURAL_DIR@"
+#define KIM_SYSTEM_MODEL_DRIVERS_DIR "@KIM_API_SYSTEM_MODEL_DRIVERS_DIR@"
+
+#define KIM_USER_PORTABLE_MODELS_DIR_DEFAULT \
+  "@KIM_API_USER_PORTABLE_MODELS_DIR_DEFAULT@"
+#define KIM_PORTABLE_MODEL_IDENTIFIER "@KIM_API_PORTABLE_MODEL_IDENTIFIER@"
+#define KIM_PORTABLE_MODEL_PLURAL_DIR_IDENTIFIER \
+  "@KIM_API_PORTABLE_MODEL_PLURAL_DIR_IDENTIFIER@"
+#define KIM_ENVIRONMENT_PORTABLE_MODEL_PLURAL_DIR \
+  "@KIM_API_ENVIRONMENT_PORTABLE_MODEL_PLURAL_DIR@"
+#define KIM_SYSTEM_PORTABLE_MODELS_DIR "@KIM_API_SYSTEM_PORTABLE_MODELS_DIR@"
+
+#define KIM_USER_SIMULATOR_MODELS_DIR_DEFAULT \
+  "@KIM_API_USER_SIMULATOR_MODELS_DIR_DEFAULT@"
+#define KIM_SIMULATOR_MODEL_IDENTIFIER "@KIM_API_SIMULATOR_MODEL_IDENTIFIER@"
+#define KIM_SIMULATOR_MODEL_PLURAL_DIR_IDENTIFIER \
+  "@KIM_API_SIMULATOR_MODEL_PLURAL_DIR_IDENTIFIER@"
+#define KIM_ENVIRONMENT_SIMULATOR_MODEL_PLURAL_DIR \
+  "@KIM_API_ENVIRONMENT_SIMULATOR_MODEL_PLURAL_DIR@"
+#define KIM_SYSTEM_SIMULATOR_MODELS_DIR "@KIM_API_SYSTEM_SIMULATOR_MODELS_DIR@"
+
+
+#endif  // KIM_CONFIGURATION_HPP_

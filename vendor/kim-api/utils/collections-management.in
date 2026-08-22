@@ -1,0 +1,1180 @@
+#!/bin/bash
+#
+
+#
+# KIM-API: An API for interatomic models
+# Copyright (c) 2013--2022, Regents of the University of Minnesota.
+# All rights reserved.
+#
+# Contributors:
+#    Ryan S. Elliott
+#    John S. Spear
+#    Yaser Afshar
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+#
+# Release: This file is part of the kim-api-2.4.2 package.
+#
+
+
+# Get ORIGIN location of this script:
+SOURCE="${BASH_SOURCE[0]}"
+# https://stackoverflow.com/questions/59895/how-to-get-the-source-directory-of-a-bash-script-from-within-the-script-itself
+if command -v readlink >/dev/null 2>&1; then
+  while test -h "$SOURCE"; do # resolve $SOURCE until the file is no longer a symlink
+    DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE" # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
+  done
+fi
+ORIGIN="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+collections_info="@_collections_info_path@"
+major_version=@PROJECT_VERSION_MAJOR@
+kim_version_string="@PROJECT_VERSION_STRING@"
+kim_api_uid_string="@KIM_API_UID@"
+# It (shell scripting) is easier if no whitespace allowed in kim_user_agent.
+kim_user_agent="kim-api-collections-management-(${kim_version_string}--`uname -mrs | sed -e 's/ /-/g'`)"
+
+
+make_command="${MAKE:=make} -j2"
+cmake_command="cmake"
+# determine web tool to use
+if command -v wget > /dev/null 2>&1; then
+  web_tool="wget"
+  web_tool_q="${web_tool} --user-agent ${kim_user_agent} -q"
+  web_tool_query="${web_tool_q} -O - --post-data"
+  web_tool_url_stdin="${web_tool_q} -O -"
+  web_tool_download="${web_tool_q} --content-disposition"
+elif command -v curl > /dev/null 2>&1; then
+  web_tool="curl"
+  web_tool_q="${web_tool} --user-agent ${kim_user_agent} -s"
+  web_tool_query="${web_tool_q} -o - --data"
+  web_tool_url_stdin="${web_tool_q} -O -"
+  web_tool_download="${web_tool_q} --fail --remote-name"
+else
+  printf "*** ERROR *** Unable to find a web tool: please install 'wget' or 'curl'.\n";
+  exit 1
+fi
+web_tool_download_number_retries=10
+web_tool_download_delay_seconds=10
+
+
+# define usage function
+usage () {
+  local command="`printf $0 | sed 's|.*/\([^/][^/]*\)/*|\1|'`"
+
+  # Follows docopt.org format
+  printf "Usage:\n"
+  printf "  ${command} list [--log]\n"
+  printf "  ${command} set-user-model-drivers-dir <directory>\n"
+  printf "  ${command} set-user-portable-models-dir <directory>\n"
+  printf "  ${command} set-user-simulator-models-dir <directory>\n"
+  printf "  ${command} install [--force]\n"
+  printf "          (CWD | environment | user | system [--sudo])\n"
+  printf "          (<openkim-item-id>... | <local-item-path>... | OpenKIM)\n"
+  printf "  ${command} reinstall [--force|--interactive] [--sudo]\n"
+  printf "          (<openkim-item-id> | <local-item-path>)...\n"
+  printf "  ${command} remove [--force|--interactive] [--sudo] <item-id>...\n"
+  printf "  ${command} remove-all [--force|--interactive] [--sudo]\n"
+  printf "  ${command} --version\n"
+  printf "\n\n"
+
+  printf "list:\n"
+  printf "  List installed kim-api model drivers, models, and simulator models\n"
+  printf "    * '--log' generate a kim.log file.  This will show any errors that\n"
+  printf "      occur as the utility searches for installed items.\n"
+  printf "\n"
+  printf "set-user-model-drivers-dir:\n"
+  printf "  Rewrite configuration file with provided directory\n"
+  printf "\n"
+  printf "set-user-portable-models-dir:\n"
+  printf "  Rewrite configuration file with provided directory\n"
+  printf "\n"
+  printf "set-user-simulator-models-dir:\n"
+  printf "  Rewrite configuration file with provided directory\n"
+  printf "\n"
+  printf "install:\n"
+  printf "  Install model driver, portable model, or simulator model from openkim.org or\n"
+  printf "  from a local path\n"
+  printf "    * Installing to a collection places items in the first directory\n"
+  printf "      of the corresponding list.)\n"
+  printf "    * 'install --force' is essentially equivalent to 'reinstall', but works\n"
+  printf "      even when the item is not currently installed.\n"
+  printf "    * 'OpenKIM' installs (overwriting items already installed) the latest dated\n"
+  printf "      release of all KIM Models found at openkim.org.\n"
+  printf "\n"
+  printf "reinstall:\n"
+  printf "  Remove and reinstall items.\n"
+  printf "  WARNING: This will remove and reinstall the entire directory of files\n"
+  printf "           associated with the item.\n"
+  printf "\n"
+  printf "remove:\n"
+  printf "  Remove model driver, portable model, or simulator model.\n"
+  printf "  WARNING: This will remove the entire directory of files associated\n"
+  printf "           with the item.\n"
+  printf "\n"
+  printf "remove-all:\n"
+  printf "  Remove all items from all collections.\n"
+  printf "  WARNING: This will remove the entire directory of files associated\n"
+  printf "           with all items.\n"
+  printf "\n"
+  printf "\n"
+  printf "NOTE: To obtain output from the CMake configure and make steps\n"
+  printf "      set the CM_VERBOSE environment variable.\n"
+  printf "\n"
+  printf "      For script debugging, execute with the shell 'x' and/or 'v'\n"
+  printf "      options to obtain verbose output.  For example:\n"
+  printf "      'sh -xv ${command} ...'.\n"
+}
+
+check_version_compatibility () {
+  local version="$1"
+  local major="`printf -- "%s" "${version}" | sed -e 's/\([^.}]*\).*/\1/'`"
+  local minor="`printf -- "%s" "${version}" | sed -e 's/[^.]*\.\([^.:]*\).*/\1/'`"
+  if test \( ${major} -eq ${major_version} \) ; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+check_item_compatibility () {
+  local item_name="$1"
+  local query="query={\"kimcode\":\"${item_name}\"}"
+  query="${query}"'&fields={"kim-api-version":1}'
+  query="${query}"'&database=obj&history=on'
+  local version
+  version="`${web_tool_query} "${query}" https://query.openkim.org/api`"
+  local error_code=$?
+  if test ${error_code} -ne 0; then
+    printf "*** ERROR *** Unable to successfully contact openkim.org to check ${item_name} compatibility.\n"
+    printf "              '${web_tool}' returned error code ${error_code}.\n"
+    return 1
+  fi
+  if test x"{\"error\":" = x`printf ${version} | sed -e 's/\(.\{9\}\).*/\1/'`; then
+    printf "*** ERROR *** Received error from openkim.org while checking ${item_name} compatibility.\n"
+    printf "              '${web_tool}' returned query result ${version}.\n"
+    return 1
+  fi
+  version="`printf -- "%s" "${version}" | \
+                 sed -e 's/\[//g' -e 's/\]//g' \
+                 -e 's/{"kim-api-version": "\([0-9.]*\)"}/\1/g'`"
+  if test x"" = x"${version}"; then
+    printf "*** ERROR *** ${item_name} not found at openkim.org.\n"
+    return 1
+  else
+    if check_version_compatibility "${version}"; then
+      return 0
+    else
+      printf "*** ERROR *** ${item_name} found at openkim.org requires version ${version} of the KIM API\n"
+      printf "              which is not compatible with the installed version ${major_version} of the KIM API.\n"
+      return 1
+    fi
+  fi
+}
+
+check_for_local_build () {
+  local name="$1"
+  if test -d "${name}"; then
+    local_build_path=`cd "${name}" && pwd`
+    return 0
+  else
+    local_build_path=""
+    return 1
+  fi
+  # output is: local_build_path
+}
+
+get_local_build_item_name () {
+  local build_path="$1"
+  if test \! -d "${build_path}"; then
+    printf "Item path '${build_path}' does not exist.\n"
+    return 1
+  fi
+
+  # create private temporary directory
+  if test x"" = x"${TMPDIR}"; then TMPDIR="/tmp"; fi
+  local build_dir="`mktemp -d "${TMPDIR}/@PROJECT_NAME@-build-XXXXXXXXXX"`"
+  if test $? -ne 0; then
+    printf "Unable to create temporary directory.\n"
+    return 1;
+  fi
+
+  (  # subshell
+    cd "${build_dir}" || return 1
+    cp -r "${build_path}" "./item-source"
+    cd item-source && mkdir build && cd build
+    if ! (${cmake_command} ../ > ./cmake-log.txt 2>&1); then
+      cat ./cmake-log.txt
+      return 1
+    elif test ! -z "${CM_VERBOSE}"; then
+      cat ./cmake-log.txt
+    fi
+
+    local item_type="`grep -- "item-type:" item-info.txt | sed -e 's/^item-type://'`"
+    case "${item_type}" in
+      modelDriver|portableModel|simulatorModel)
+        printf -- "%s" "`grep -- "item-name:" item-info.txt | sed -e 's/^item-name:"\(.*\)"/\1/'`" \
+               > "${build_dir}/item_name"
+        ;;
+      *)
+        printf -- "" > "${build_dir}/item_name"
+        printf "Item type '${item_type}' unknown.\n"
+        error="true"
+        ;;
+    esac
+
+    if test x"true" = x"${error}"; then
+      return 1
+    else
+      return 0
+    fi
+  ) || return 1  # exit subshell
+
+  item_name=`cat ${build_dir}/item_name`
+  rm -rf "${build_dir}" || return 1
+
+  return 0
+  # output is: item_name
+}
+
+check_config_file () {
+  local config_file_name drivers_dir models_dir simulator_models_dir
+  config_file_name="`${collections_info} config_file name`"; if test $? -ne 0; then return 1; fi
+  drivers_dir="`${collections_info} config_file model_drivers`"; if test $? -ne 0; then return 1; fi
+  models_dir="`${collections_info} config_file portable_models`"; if test $? -ne 0; then return 1; fi
+  simulator_models_dir="`${collections_info} config_file simulator_models`"; if test $? -ne 0; then return 1; fi
+
+  if test \! -f "${config_file_name}" -o x"" = x"${drivers_dir}" -o x"" = x"${models_dir}" -o x"" = x"${simulator_models_dir}"; then
+    printf "Invalid kim-api configuration file.\n"
+    return 1
+  fi
+}
+
+rewrite_config_file_item_type_dir () {
+  local item_type=$1
+  local dir=$2
+
+  if test -d "${dir}"; then
+    local config_file_name drivers_dir models_dir
+    config_file_name="`${collections_info} config_file name`"; if test $? -ne 0; then return 1; fi
+    drivers_dir="`${collections_info} config_file model_drivers`"; if test $? -ne 0; then return 1; fi
+    models_dir="`${collections_info} config_file portable_models`"; if test $? -ne 0; then return 1; fi
+    simulator_models_dir="`${collections_info} config_file simulator_models`"; if test $? -ne 0; then return 1; fi
+
+    local full_dir="`cd "${dir}" && pwd`"; if test $? -ne 0; then return 1; fi
+    if test x"${item_type}" = x"drivers"; then
+      drivers_dir=${full_dir}
+    elif test x"${item_type}" = x"models"; then
+      models_dir=${full_dir}
+    elif test x"${item_type}" = x"simulator_models"; then
+      simulator_models_dir=${full_dir}
+    else
+      return 1
+    fi
+
+    ${collections_info} write_config_file "${config_file_name}" "${drivers_dir}" "${models_dir}" "${simulator_models_dir}" || return 1
+  else
+    printf "Directory '%s' does not exist.\n" "${dir}"
+    return 1
+  fi
+}
+
+get_build_install_item () {
+  local install_collection="$1"
+  local item_name="$2"
+  local force="$3"
+  local use_sudo="$4"
+  local PASSWORD="$5"
+  local found_item=""
+  local item_type=""
+  local local_build_path=""
+
+  # check for non-empty item_name
+  if test x"" = x"${item_name}"; then
+    printf "Empty item id.\n"
+    return 1
+  fi
+
+  # make changes for installing to CWD collection, if necessary
+  if test x"${install_collection}" = x"CWD"; then
+    drivers_env_name="`${collections_info} env env | sed -e 's/^\([^ ]*\) .*/\1/'`"; if test $? -ne 0; then return 1; fi
+    eval "drivers_env_value=\$${drivers_env_name}"
+    models_env_name="`${collections_info} env env | sed -e 's/^[^ ]* \([^ ]*\) .*/\1/'`"; if test $? -ne 0; then return 1; fi
+    eval "models_env_value=\$${models_env_name}"
+    simulator_models_env_name="`${collections_info} env env | sed -e 's/^[^ ]* [^ ]* \([^ ]*\).*/\1/'`"; if test $? -ne 0; then return 1; fi
+    eval "simulator_models_env_value=\$${simulator_models_env_name}"
+
+    export ${drivers_env_name}=${PWD}:${drivers_env_value}
+    export ${models_env_name}=${PWD}:${models_env_value}
+    export ${simulator_models_env_name}=${PWD}:${simulator_models_env_value}
+    install_collection="environment"
+  fi
+
+  # check for local build and get item name
+  if check_for_local_build "${item_name}"; then  # sets local_build_path
+    if ! get_local_build_item_name "${local_build_path}"; then  # sets item_name
+      # error message already printed
+      return 1
+    else
+      printf "Found local item named: ${item_name}.\n"
+      printf "In source directory: ${local_build_path}.\n"
+      printf "   (If you are trying to install an item from openkim.org\n"
+      printf "    rerun this command from a different working directory,\n"
+      printf "    or rename the source directory mentioned above.)\n"
+      printf "\n"
+    fi
+  fi
+
+  # check for existing item
+  if test x"OpenKIM" = x"${item_name}"; then
+    found_item=""
+    item_type="OpenKIM"
+  else
+    found_item="`${collections_info} model_drivers find "${item_name}"`"; if test $? -ne 0; then return 1; fi
+    found_item="${found_item}""`${collections_info} portable_models find "${item_name}"`"; if test $? -ne 0; then return 1; fi
+    found_item="${found_item}""`${collections_info} simulator_models find "${item_name}"`"; if test $? -ne 0; then return 1; fi
+  fi
+  if test x"" != x"${found_item}"; then
+    local item_collection="`printf -- "%s" "${found_item}" | sed -e 's/ .*//'`"
+    printf "Item '${item_name}' already installed in collection '${item_collection}'.\n"
+    if test x"${force}" = x"yes"; then
+      if ! remove_item "${item_name}" "${use_sudo}" "${PASSWORD}" "interactive-no"; then
+        return 1
+      fi
+    else
+      if test x"${item_collection}" = x"${install_collection}"; then
+        return 0
+      else
+        return 1
+      fi
+    fi
+  fi
+
+  # create private temporary directory
+  if test x"" = x"${TMPDIR}"; then TMPDIR="/tmp"; fi
+  local build_dir="`mktemp -d "${TMPDIR}/@PROJECT_NAME@-build-XXXXXXXXXX"`"
+  if test $? -ne 0; then
+    printf "Unable to create temporary directory.\n"
+    return 1;
+  fi
+
+  (  # subshell
+    cd "${build_dir}" || return 1
+
+    # download item (and possibly its driver)
+    if test x"OpenKIM" = x"${item_type}"; then
+      # find most recent release archive name
+      local archive_basename=`${web_tool_url_stdin} https://s3.openkim.org/archives/collection | \
+        sed -e '/openkim-models-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].txz/!d' | sed -e '$!d' | \
+        sed -e 's/^.*\(openkim-models-.*\)\.txz.*$/\1/'`
+      # download archive
+      printf "Downloading..............#%s\n" "${archive_basename}" | sed -e 's/ /./g' -e 's/#/ /g'
+      for iter in `seq 1 ${web_tool_download_number_retries}`; do
+        printf "              Attempt $iter/${web_tool_download_number_retries}.\n"
+        ${web_tool_download} "https://s3.openkim.org/archives/collection/${archive_basename}.txz"
+        error_code=$?
+        if test ${error_code} -ne 0; then
+          printf "                Unable to download ${archive_basename}.txz from https://s3.openkim.org due to a network error.\n"
+          printf "                Check that you are able to access https://s3.openkim.org/archives/collection/${archive_basename}.txz"
+          if test ${iter} -eq ${web_tool_download_number_retries}; then
+            printf "                    Maximum number of retires exceeded.\n"
+            return 1
+          fi
+          printf "                    Sleeping for ${web_tool_download_delay_seconds} seconds.\n"
+          sleep ${web_tool_download_delay_seconds}
+        else
+          break;
+        fi
+      done
+      #tar Jxf "${archive_basename}.txz" && rm -f "${archive_basename}.txz"
+      # Workaround for https://github.com/msys2/MSYS2-packages/issues/1548
+      xz --decompress --stdout "${archive_basename}.txz" | tar xf - && rm -f "${archive_basename}.txz"
+      # configure archive
+      cd "./${archive_basename}" && mkdir build && cd build
+      if ! ${cmake_command} ../ -DKIM_API_INSTALL_COLLECTION="`printf ${install_collection} | tr "[:lower:]" "[:upper:]"`" > ./cmake-log.txt 2>&1; then
+        cat ./cmake-log.txt
+        return 1
+      elif test ! -z "${CM_VERBOSE}"; then
+        cat ./cmake-log.txt
+      fi
+      # build and install archive
+      if ! ((${make_command} clean && ${make_command} && ${make_command} CTEST_OUTPUT_ON_FAILURE=1 test) && \
+              if test x"sudo-yes" = x"${use_sudo}"; then
+                printf -- "%s\n" "${PASSWORD}" | sudo -k -S ${make_command} install 2> /dev/null
+              else
+                ${make_command} install
+              fi); then
+        return 1
+      fi
+    else
+      if test x"" = x"${local_build_path}"; then
+        if check_item_compatibility "${item_name}"; then
+          printf "Downloading..............#%s\n" "${item_name}" | sed -e 's/ /./g' -e 's/#/ /g'
+          for iter in `seq 1 ${web_tool_download_number_retries}`; do
+            printf "              Attempt $iter/${web_tool_download_number_retries}.\n"
+            ${web_tool_download} "https://openkim.org/download/${item_name}.txz"
+            error_code=$?
+            if test ${error_code} -ne 0; then
+              printf "                Unable to download ${item_name}.txz from https://openkim.org due to a network error.\n"
+              printf "                Check that you are able to access https://openkim.org/download/${item_name}.txz"
+              if test ${iter} -eq ${web_tool_download_number_retries}; then
+                printf "                    Maximum number of retires exceeded.\n"
+                return 1
+              fi
+              printf "                    Sleeping for ${web_tool_download_delay_seconds} seconds.\n"
+              sleep ${web_tool_download_delay_seconds}
+            else
+              break;
+            fi
+          done
+          #tar Jxf "${item_name}.txz" && rm -f "${item_name}.txz"
+          # Workaround for https://github.com/msys2/MSYS2-packages/issues/1548
+          xz --decompress --stdout "${item_name}.txz" | tar xf - && rm -f "${item_name}.txz"
+        else
+          return 1
+        fi
+      else
+        cp -r "${local_build_path}" "./${item_name}"
+      fi
+      cd "./${item_name}" && mkdir build && cd build
+      if ! ${cmake_command} ../ -DKIM_API_INSTALL_COLLECTION="`printf ${install_collection} | tr "[:lower:]" "[:upper:]"`" > ./cmake-log.txt 2>&1; then
+        cat ./cmake-log.txt
+        return 1
+      elif test ! -z "${CM_VERBOSE}"; then
+        cat ./cmake-log.txt
+      fi
+      item_type="`grep "item-type:" item-info.txt | sed -e 's/item-type://'`"
+      item_driver_name="`grep "item-driver-name:" item-info.txt | sed -e 's/item-driver-name:"\(.*\)"/\1/'`"
+      if test x"portableModel" = x"${item_type}" -a x"item-driver-name:NULL" != x"${item_driver_name}"; then
+        dvr="${item_driver_name}"
+        if test x"" != x"`${collections_info} model_drivers find "${dvr}"`"; then
+          printf "Found#installed#driver...#%s\n" "${dvr}" | sed -e 's/ /./g' -e 's/#/ /g' || return 1
+        else
+          printf "This item needs its driver '${dvr}', but it is not currently installed.\n"
+          printf "Trying to find it at openkim.org.\n"
+          # try openkim.org
+          get_build_install_item "${install_collection}" "${dvr}" "${force}" "${use_sudo}" "${PASSWORD}" || \
+            printf "*** WARNING *** Model Driver for this item not currently installed in any of the KIM API collections.\n%s\n\n" \
+                   "                Continuing with installation of the item anyway."
+        fi
+        if ! (${make_command} clean && ${make_command} && ${make_command} CTEST_OUTPUT_ON_FAILURE=1 test) > ./make-log.txt 2>&1; then
+          cat ./make-log.txt
+          return 1
+        elif test ! -z "${CM_VERBOSE}"; then
+          cat ./make-log.txt
+        fi
+        if test x"sudo-yes" = x"${use_sudo}"; then
+          printf -- "%s\n" "${PASSWORD}" | sudo -k -S ${make_command} install 2> /dev/null
+        else
+          ${make_command} install
+        fi
+      elif test x"portableModel"    = x"${item_type}" -o \
+                x"modelDriver"      = x"${item_type}" -o \
+                x"simulatorModel"   = x"${item_type}"; then
+        if ! (${make_command} clean && ${make_command} && ${make_command} CTEST_OUTPUT_ON_FAILURE=1 test) > ./make-log.txt 2>&1; then
+          cat ./make-log.txt
+          return 1
+        elif test ! -z "${CM_VERBOSE}"; then
+          cat ./make-log.txt
+        fi
+        if test x"sudo-yes" = x"${use_sudo}"; then
+          printf -- "%s\n" "${PASSWORD}" | sudo -k -S ${make_command} install 2> /dev/null
+        else
+          ${make_command} install
+        fi
+      else
+        printf "Item '${item_name}' of unknown type '${item_type}'.\n"
+        return 1
+      fi
+    fi
+  ) || return 1  # exit subshell
+
+  rm -rf "${build_dir}" || return 1
+}
+
+remove_item () {
+  local item_name="$1"
+  local use_sudo="$2"
+  local PASSWORD="$3"
+  local interactive="$4"
+  local found_item=""
+  local item_type=""
+  local confirmed=1
+
+  # check for existing item
+  found_item="`${collections_info} model_drivers find "${item_name}"`"
+  if test x"" = x"${found_item}"; then
+    found_item="`${collections_info} portable_models find "${item_name}"`"
+    if test x"" = x"${found_item}"; then
+      found_item="`${collections_info} simulator_models find "${item_name}"`"
+      if test x"" = x"${found_item}"; then
+        printf "Item '${item_name}' not installed.\n"
+        return 1
+      else
+        item_type="simulator_models"
+      fi
+    else
+      item_type="portable_models"
+    fi
+  else
+    item_type="model_drivers"
+  fi
+
+  local item_dir
+  item_dir="`${collections_info} "${item_type}" find "${item_name}" | sed -e 's/^[^ ]* [^ ]* \([^ ]*\).*/\1/'`""/${item_name}"; if test $? -ne 0; then return 1; fi
+
+  printf "Removing '%s'. " "${item_dir}"
+  if test x"${interactive}" = x"interactive"; then
+    printf "Continue? "
+    if get_confirmation; then
+      confirmed=0
+    fi
+  else
+    confirmed=0
+  fi
+  if test 0 -eq ${confirmed}; then
+    if test x"sudo-yes" = x"${use_sudo}"; then
+      printf -- "%s\n" "${PASSWORD}" | sudo -k -S rm -rf "${item_dir}" 2> /dev/null || return 1
+    else
+      rm -rf "${item_dir}" || return 1
+    fi
+    printf "[done]\n"
+  else
+    printf "[skipped]\n"
+  fi
+}
+
+split_items_list_into_collections () {
+  local item_type="$1"
+  local items_list="$2"
+  # items_list might have paths with backslashes (in particular \U)
+  # use 'printf "%s" ...' below to avoid escape processing of first argument.
+
+  local cwd_collection
+  cwd_collection=`printf "%s" "${items_list}" | grep "^currentWorkingDirectory" | \
+                   sed -e 's/^currentWorkingDirectory \([^ ]*\) .*$/	\1/'`
+  local number_cwd
+  number_cwd=`printf "${cwd_collection}" | grep -c ''`
+  if test x"" = x"${number_cwd}"; then number_cwd=0; fi
+  local env_collection
+  env_collection=`printf "%s" "${items_list}" | grep "^environmentVariable" | \
+                  sed -e 's/^environmentVariable \([^ ]*\) .*$/	\1/'`
+  local number_env
+  number_env=`printf "${env_collection}" | grep -c ''`
+  if test x"" = x"${number_env}"; then number_env=0; fi
+  local usr_collection
+  usr_collection=`printf "%s" "${items_list}" | grep "^user" | \
+                  sed -e 's/^user \([^ ]*\) .*$/	\1/'`
+  local number_usr
+  number_usr=`printf "${usr_collection}" | grep -c ''`
+  if test x"" = x"${number_usr}"; then number_usr=0; fi
+  local sys_collection
+  sys_collection=`printf "%s" "${items_list}" | grep "^system" | \
+                  sed -e 's/^system \([^ ]*\) .*$/	\1/'`
+  local number_sys
+  number_sys=`printf "${sys_collection}" | grep -c ''`
+  if test x"" = x"${number_sys}"; then number_sys=0; fi
+
+  if test x"${item_type}" = x"drivers"; then
+    drivers_cwd_collection=${cwd_collection}
+    drivers_env_collection=${env_collection}
+    drivers_usr_collection=${usr_collection}
+    drivers_sys_collection=${sys_collection}
+    number_drivers_cwd=${number_cwd}
+    number_drivers_env=${number_env}
+    number_drivers_usr=${number_usr}
+    number_drivers_sys=${number_sys}
+  elif test x"${item_type}" = x"models"; then
+    models_cwd_collection=${cwd_collection}
+    models_env_collection=${env_collection}
+    models_usr_collection=${usr_collection}
+    models_sys_collection=${sys_collection}
+    number_models_cwd=${number_cwd}
+    number_models_env=${number_env}
+    number_models_usr=${number_usr}
+    number_models_sys=${number_sys}
+  elif test x"${item_type}" = x"simulator_models"; then
+    simulator_models_cwd_collection=${cwd_collection}
+    simulator_models_env_collection=${env_collection}
+    simulator_models_usr_collection=${usr_collection}
+    simulator_models_sys_collection=${sys_collection}
+    number_simulator_models_cwd=${number_cwd}
+    number_simulator_models_env=${number_env}
+    number_simulator_models_usr=${number_usr}
+    number_simulator_models_sys=${number_sys}
+  fi
+}
+
+print_separator_line () {
+  printf "%79s\n" " " | sed -e "s/ /$1/g"
+}
+
+print_collection_item_list () {
+  local item_label="$1"
+  local dir_list="$2"
+  local number_of_items_in_list=$3
+  local item_list="$4"
+
+  printf -- "${item_label}: "
+  if test x"--empty--" = x"${dir_list}"; then
+    printf "%s" "${dir_list}"
+  else
+    printf "'%s' " ${dir_list}
+  fi
+  printf "\n"
+  if test ${number_of_items_in_list} -gt 0; then
+    printf -- "${item_list}\n"  # expected to have control characters
+  else
+    printf "\t--empty--\n"
+  fi
+}
+
+print_list_of_items () {
+  local with_log
+  if test x"$1" = x"yes"; then
+    with_log="--log"
+  else
+    with_log=""
+  fi
+
+  cmake_env_name="@KIM_API_ENVIRONMENT_CMAKE_PREFIX_DIR@"
+  cmake_env="${@KIM_API_ENVIRONMENT_CMAKE_PREFIX_DIR@}"
+  if test x"" = x"${cmake_env}"; then cmake_env="--empty--"; fi
+  config_env_name="`${collections_info} config_file env | sed -e 's/ .*//'`"; if test $? -ne 0; then return 1; fi
+  config_env="`${collections_info} config_file env | sed -e 's/^[^ ]* //'`"; if test $? -ne 0; then return 1; fi
+  if test x"" = x"${config_env}"; then config_env="--empty--"; fi
+  drivers_env_name="`${collections_info} env env | sed -e 's/^\([^ ]*\) .*/\1/'`"; if test $? -ne 0; then return 1; fi
+  drivers_env="`${collections_info} env model_drivers`"; if test $? -ne 0; then return 1; fi
+  if test x"" = x"${drivers_env}"; then drivers_env="--empty--"; fi
+  models_env_name="`${collections_info} env env | sed -e 's/^[^ ]* \([^ ]*\) .*/\1/'`"; if test $? -ne 0; then return 1; fi
+  models_env="`${collections_info} env portable_models`"; if test $? -ne 0; then return 1; fi
+  if test x"" = x"${models_env}"; then models_env="--empty--"; fi
+  simulator_models_env_name="`${collections_info} env env | sed -e 's/^[^ ]* [^ ]* \([^ ]*\).*/\1/'`"; if test $? -ne 0; then return 1; fi
+  simulator_models_env="`${collections_info} env simulator_models`"; if test $? -ne 0; then return 1; fi
+  if test x"" = x"${simulator_models_env}"; then simulator_models_env="--empty--"; fi
+
+  printf "\n\n"
+  printf "Knowledgebase of Interatomic Models (KIM)"
+  printf -- "  ---  Model Collections Listing\n"
+  print_separator_line "="
+  printf "\n"
+  printf "kim-api: \n\t%s\n" "`${collections_info} system project`"
+  printf "kim-api-uid: \n\t%s\n" "${kim_api_uid_string}"
+  printf "\n"
+  printf "kim-api library file: \n\t%s\n" "`${collections_info} system libpath`"
+  printf "kim-api configuration file:\n\t%s\n" \
+         "`${collections_info} config_file name`"
+  printf "\n\n"
+  printf "Environment Variables:\n"
+  print_separator_line "-"
+  printf -- "%s:\n" "${cmake_env_name}"
+  printf -- "\t%s\n" "${cmake_env}"
+  printf "\n"
+  printf -- "%s:\n" "${config_env_name}"
+  printf -- "\t%s\n" "${config_env}"
+  printf "\n"
+  printf -- "%s:\n" "${drivers_env_name}"
+  printf -- "\t%s\n" ${drivers_env}  # unquoted ${drivers_env} to have multiple separate arguments
+  printf "\n"
+  printf -- "%s:\n" "${models_env_name}"
+  printf -- "\t%s\n" ${models_env}  # unquoted ${models_env} to have multiple separate arguments
+  printf "\n"
+  printf -- "%s:\n" "${simulator_models_env_name}"
+  printf -- "\t%s\n" ${simulator_models_env}  # unquoted ${simulator_models_env} to have multiple separate arguments
+  printf "\n"
+  print_separator_line "="
+
+
+  model_drivers_list="`${collections_info} model_drivers ${with_log}`"; if test $? -ne 0; then return 1; fi
+  split_items_list_into_collections "drivers" "${model_drivers_list}"
+  models_list="`${collections_info} portable_models ${with_log}`"; if test $? -ne 0; then return 1; fi
+  split_items_list_into_collections "models" "${models_list}"
+  simulator_models_list="`${collections_info} simulator_models ${with_log}`"; if test $? -ne 0; then return 1; fi
+  split_items_list_into_collections "simulator_models" "${simulator_models_list}"
+
+  printf "\n\n\n"
+  printf "Current Working Directory Collection\n"
+  print_separator_line "-"
+  print_collection_item_list "Model Drivers" "${PWD}" $number_drivers_cwd "${drivers_cwd_collection}"
+  printf "\n"
+  print_collection_item_list "Portable Models" "${PWD}" $number_models_cwd "${models_cwd_collection}"
+  printf "\n"
+  print_collection_item_list "Simulator Models" "${PWD}" $number_simulator_models_cwd "${simulator_models_cwd_collection}"
+  printf "\n\n"
+
+  printf "Environment Variable Collection\n"
+  print_separator_line "-"
+  print_collection_item_list "Model Drivers" "${drivers_env}" $number_drivers_env "${drivers_env_collection}"
+  printf "\n"
+  print_collection_item_list "Portable Models" "${models_env}" $number_models_env "${models_env_collection}"
+  printf "\n"
+  print_collection_item_list "Simulator Models" "${simulator_models_env}" $number_simulator_models_env "${simulator_models_env_collection}"
+  printf "\n\n"
+
+  drivers_usr="`${collections_info} config_file model_drivers`"; if test $? -ne 0; then return 1; fi
+  if test x"" = x"${drivers_usr}"; then drivers_usr="--empty--"; fi
+  models_usr="`${collections_info} config_file portable_models`"; if test $? -ne 0; then return 1; fi
+  if test x"" = x"${models_usr}"; then models_usr="--empty--"; fi
+  simulator_models_usr="`${collections_info} config_file simulator_models`"; if test $? -ne 0; then return 1; fi
+  if test x"" = x"${simulator_models_usr}"; then models_usr="--empty--"; fi
+  printf "User Collection\n"
+  print_separator_line "-"
+  print_collection_item_list "Model Drivers" "${drivers_usr}" $number_drivers_usr "${drivers_usr_collection}"
+  printf "\n"
+  print_collection_item_list "Portable Models" "${models_usr}" $number_models_usr "${models_usr_collection}"
+  printf "\n"
+  print_collection_item_list "Simulator Models" "${simulator_models_usr}" $number_simulator_models_usr "${simulator_models_usr_collection}"
+  printf "\n\n"
+
+  drivers_sys="`${collections_info} system model_drivers`"; if test $? -ne 0; then return 1; fi
+  if test x"" = x"${drivers_sys}"; then drivers_sys="--empty--"; fi
+  models_sys="`${collections_info} system portable_models`"; if test $? -ne 0; then return 1; fi
+  if test x"" = x"${models_sys}"; then models_sys="--empty--"; fi
+  simulator_models_sys="`${collections_info} system simulator_models`"; if test $? -ne 0; then return 1; fi
+  if test x"" = x"${simulator_models_sys}"; then simulator_models_sys="--empty--"; fi
+  printf "System Collection\n"
+  print_separator_line "-"
+  print_collection_item_list "Model Drivers" "${drivers_sys}" $number_drivers_sys "${drivers_sys_collection}"
+  printf "\n"
+  print_collection_item_list "Portable Models" "${models_sys}" $number_models_sys "${models_sys_collection}"
+  printf "\n"
+  print_collection_item_list "Simulator Models" "${simulator_models_sys}" $number_simulator_models_sys "${simulator_models_sys_collection}"
+  printf "\n"
+}
+
+get_password () {
+  # Read the password from stdin
+  PASSWORD=`
+    # To be sure of reading data from the terminal no matter
+    # how output has been redirected. Must redirect stdin
+    # to the controlling terminal
+    exec < /dev/tty || return 1
+
+    # TTY current settings in a stty-readable form
+    tty_current_settings=\`stty -g\` || return 1
+
+    # Restore the settings on receiving EXIT signal
+    trap 'stty ${tty_current_settings} > /dev/null 2>&1' EXIT
+
+    # Echo input characters, and disable terminal local echo
+    stty -echo || return 1
+
+    # Redirect stdout back to /dev/tty
+    printf "Enter Password : " > /dev/tty
+
+    # Read the password
+    # The Internal Field Separator (IFS), is commonly used with read command,
+    # parameter expansions and command substitution.
+    # The 'IFS=' prefix keeps read from trimming spaces and tabs,
+    # the -r keeps it from trying to parse backslashes as escapes
+    local error_status
+    error_status=0
+    IFS= read -r password || error_status=1
+
+    if test "${error_status}" -ne 0; then
+      printf "\n*** ERROR *** read command failed to get the entered password. \n"
+      return 1
+    fi
+
+    # Display a newline to acknowledge the entered password
+    printf "\n" > /dev/tty
+
+    # Return the entered password
+    printf '%s\n' "$password"
+  ` || return 1
+
+  if !(printf -- '%s\n' "${PASSWORD}" | sudo -k -S printf "" > /dev/null 2>&1); then
+    printf "Bad password.\n"
+    return 1
+  fi
+}
+
+get_confirmation () {
+  local ANSWER
+  printf "[y/n] : "
+  read ANSWER
+  if test x"${ANSWER}" = x"y"; then
+    return 0;
+  else
+    return 1;
+  fi
+}
+
+######## main script ########
+
+# check that command is given
+if test $# -lt 1; then
+  usage
+  exit 1
+else
+  command=$1
+  case $command in
+    list|set-user-model-drivers-dir|set-user-portable-models-dir|set-user-simulator-models-dir|install|reinstall|remove|remove-all|--version)
+    ;;
+    *)
+      printf "unknown command: %s\n\n" $command
+      usage
+      exit 1
+  esac
+fi
+
+if ! check_config_file; then
+  printf "Aborting!\n"
+  exit 1
+fi
+
+case $command in
+  list)
+    if test $# -gt 3; then
+      usage
+      exit 1
+    fi
+    shift
+    list_with_log="no"
+    for arg in "$@"; do
+      case "$arg" in
+        --log)
+          list_with_log="yes"
+          ;;
+        *)
+          printf "unknown option %s\n\n" "$arg"
+          usage
+          exit 1
+          ;;
+      esac
+    done
+    print_list_of_items "${list_with_log}"
+    ;;
+  set-user-model-drivers-dir)
+    if test $# -lt 2; then
+      usage
+      exit 1
+    else
+      subcommand=$2
+      if ! rewrite_config_file_item_type_dir "drivers" "$subcommand"; then
+        printf "\nAborting!\n"
+        exit 1
+      else
+        printf "\nSuccess!\n"
+      fi
+    fi
+    ;;
+  set-user-portable-models-dir)
+    if test $# -lt 2; then
+      usage
+      exit 1
+    else
+      subcommand=$2
+      if ! rewrite_config_file_item_type_dir "models" "$subcommand"; then
+        printf "\nAborting!\n"
+        exit 1
+      else
+        printf "\nSuccess!\n."
+      fi
+    fi
+    ;;
+  set-user-simulator-models-dir)
+    if test $# -lt 2; then
+      usage
+      exit 1
+    else
+      subcommand=$2
+      if ! rewrite_config_file_item_type_dir "simulator_models" "$subcommand"; then
+        printf "\nAborting!\n"
+        exit 1
+      else
+        printf "\nSuccess!\n."
+      fi
+    fi
+    ;;
+  install)
+    if test $# -lt 3; then
+      usage
+      exit 1
+    else
+      force="no"
+      if test x"$2" = x"--force"; then
+        force="yes"
+        shift
+      fi
+      subcommand=$2
+      shift
+      shift
+      case $subcommand in
+        CWD|environment|user)
+          for item_id in $@; do
+            if ! get_build_install_item "${subcommand}" "${item_id}" "${force}" "sudo-no" ""; then
+              printf "\nAborting!\n"
+              exit 1
+            else
+              printf "\nSuccess!\n"
+            fi
+          done
+          ;;
+        system)
+          PASSWORD=""
+          if test x"--sudo" = x"$1"; then
+            shift
+            use_sudo="sudo-yes"
+            if ! get_password; then
+              printf "\nAborting!\n"
+              exit 1
+            fi
+          else
+            use_sudo="sudo-no"
+          fi
+          for item_id in $@; do
+            if ! get_build_install_item "system" "${item_id}" "${force}" "${use_sudo}" "${PASSWORD}"; then
+              printf "\nAborting!\n"
+              exit 1
+            else
+              printf "\nSuccess!\n"
+            fi
+          done
+          ;;
+        *)
+          printf "unknown subcommand: %s\n\n" $subcommand
+          usage
+          exit 1
+          ;;
+      esac
+    fi
+    ;;
+  reinstall)
+    if test $# -lt 2; then
+      usage
+      exit 1
+    else
+      shift
+      use_sudo="sudo-no"
+      use_force="force-no"
+      use_interactive="interactive-no"
+      while test x"--" = x"`printf -- "%s" "$1" | sed -e 's/^\(..\).*/\1/'`"; do
+        case $1 in
+          --force)
+            use_force="force-yes"
+            use_interactive="interactive-no"
+            ;;
+          --interactive)
+            use_force="force-no"
+            use_interactive="interactive"
+            ;;
+          --sudo)
+            use_sudo="sudo-yes"
+            if ! get_password; then
+              printf "\nAborting!\n"
+              exit 1
+            fi
+            ;;
+          *)
+            printf "unknown option: %s\n\n" $1
+            usage
+            exit 1
+            ;;
+        esac
+        shift
+      done
+    fi
+    if test x"force-no" = x"${use_force}"; then
+      printf "This will remove and reinstall all files associated with these items.\n"
+      printf "  Use the '--interactive' option to request confirmation\n"
+      printf "  before attempting to remove each item.\n"
+      printf "\n"
+      printf "Are you sure you want to proceed? "
+      if get_confirmation; then
+        confirmation=0
+      else
+        confirmation=1
+      fi
+    else
+      confirmation=0
+    fi
+    if test 0 -eq ${confirmation}; then
+      for item_id in $@; do
+        if check_for_local_build "${item_id}"; then  # sets local_build_path
+          if ! get_local_build_item_name "${local_build_path}"; then  # sets item_name
+            printf "\nAborting!\n"
+            exit 1
+          fi
+        else
+          if ! check_item_compatibility "${item_id}"; then
+            printf "\nAborting!\n"
+            exit 1
+          else
+            item_name="${item_id}"
+          fi
+        fi
+        found_item="`${collections_info} model_drivers find "${item_name}"` `${collections_info} portable_models find "${item_name}"` `${collections_info} simulator_models find "${item_name}"`"
+        if test \! x"" = x"${found_item}"; then
+          item_collection="`printf "${found_item}" | sed -e 's/^[[:space:]]*\([^[:space:]]*\) .*/\1/'`"
+          if ! (remove_item "${item_name}" "${use_sudo}" "${PASSWORD}" "${use_interactive}" && \
+                  get_build_install_item "${item_collection}" "${item_id}" "${use_sudo}" "${PASSWORD}" "no"); then
+            printf "\nAborting!\n"
+            exit 1
+          fi
+        else
+          printf "\nAborting!\n"
+          exit 1
+        fi
+      done
+      printf "\nSuccess!\n"
+    fi
+    ;;
+  remove)
+    if test $# -lt 2; then
+      usage
+      exit 1
+    else
+      shift
+      use_sudo="sudo-no"
+      use_force="force-no"
+      use_interactive="interactive-no"
+      while test x"--" = x"`printf -- "%s" "$1" | sed -e 's/^\(..\).*/\1/'`"; do
+        case $1 in
+          --force)
+            use_force="force-yes"
+            use_interactive="interactive-no"
+            ;;
+          --interactive)
+            use_force="force-no"
+            use_interactive="interactive"
+            ;;
+          --sudo)
+            use_sudo="sudo-yes"
+            if ! get_password; then
+              printf "\nAborting!\n"
+              exit 1
+            fi
+            ;;
+          *)
+            printf "unknown option: %s\n\n" $1
+            usage
+            exit 1
+            ;;
+        esac
+        shift
+      done
+    fi
+    printf "This will remove all files associated with these items.\n"
+    printf "  Use the '--interactive' option to request confirmation\n"
+    printf "  before attempting to remove each item.\n"
+    if test x"force-no" = x"${use_force}"; then
+      printf "\n"
+      printf "Are you sure you want to proceed? "
+      if get_confirmation; then
+        confirmation=0
+      else
+        confirmation=1
+      fi
+    else
+      confirmation=0
+    fi
+    if test 0 -eq ${confirmation}; then
+      for item_id in $@; do
+        if ! remove_item "${item_id}" "${use_sudo}" "${PASSWORD}" "${use_interactive}"; then
+          printf "\nAborting!\n"
+          exit 1
+        fi
+      done
+      printf "\nSuccess!\n"
+    else
+      printf "\nAborting!\n"
+    fi
+    ;;
+  remove-all)
+    shift
+    use_sudo="sudo-no"
+    use_force="force-no"
+    use_interactive="interactive-no"
+    while test x"--" = x"`printf -- "%s" "$1" | sed -e 's/^\(..\).*/\1/'`"; do
+      case $1 in
+        --force)
+          use_force="force-yes"
+          use_interactive="interactive-no"
+          ;;
+        --interactive)
+          use_force="force-no"
+          use_interactive="interactive"
+          ;;
+        --sudo)
+          use_sudo="sudo-yes"
+          if ! get_password; then
+            printf "\nAborting!\n"
+            exit 1
+          fi
+          ;;
+        *)
+          printf "unknown option: %s\n\n" $1
+          usage
+          exit 1
+          ;;
+      esac
+      shift
+    done
+    if test x"force-no" = x"${use_force}"; then
+      printf "This will remove all files associated with all items in the 'environment',\n"
+      printf "'user', and 'system' collections.\n"
+      printf "  Use the '--interactive' option to request confirmation\n"
+      printf "  before attempting to remove each item.\n"
+      printf "\n"
+      printf "Are you sure you want to proceed? "
+      if get_confirmation; then
+        confirmation=0
+      else
+        confirmation=1
+      fi
+    else
+      confirmation=0
+    fi
+    if test 0 -eq ${confirmation}; then
+      # get full list and loop over it to remove
+      for item_id in `${collections_info} model_drivers | sed -e 's/^[^[:space:]]* \([^[:space:]]*\).*/\1/'`; do
+        if ! remove_item "${item_id}" "${use_sudo}" "${PASSWORD}" "${use_interactive}"; then
+          printf "\n Aborting!\n"
+          exit 1
+        fi
+      done
+      for item_id in `${collections_info} portable_models | sed -e 's/^[^[:space:]]* \([^[:space:]]*\).*/\1/'`; do
+        if ! remove_item "${item_id}" "${use_sudo}" "${PASSWORD}" "${use_interactive}"; then
+          printf "\n Aborting!\n"
+          exit 1
+        fi
+      done
+      for item_id in `${collections_info} simulator_models | sed -e 's/^[^[:space:]]* \([^[:space:]]*\).*/\1/'`; do
+        if ! remove_item "${item_id}" "${use_sudo}" "${PASSWORD}" "${use_interactive}"; then
+          printf "\n Aborting!\n"
+          exit 1
+        fi
+      done
+      printf "\nSuccess!\n"
+    else
+      printf "\nAborting!\n"
+      exit 1
+    fi
+    ;;
+  --version)
+    if test $# -ne 1; then
+      usage
+      exit 1
+    else
+      printf "%s\n" "${kim_version_string}"
+    fi
+    ;;
+esac

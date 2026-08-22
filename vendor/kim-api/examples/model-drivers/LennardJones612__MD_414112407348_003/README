@@ -1,0 +1,63 @@
+#
+# KIM-API: An API for interatomic models
+# Copyright (c) 2013--2022, Regents of the University of Minnesota.
+# All rights reserved.
+#
+# Contributors:
+#    Ryan S. Elliott
+#    Andrew Akerson
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+
+This directory (LennardJones612__MD_414112407348_003) contains a Lennard-Jones
+Driver which reads a parameter file containing the parameters for up to 139
+species.  It supports shifted and non-shifted energy behavior.  The driver is
+written in C++.  This Model Driver expects one parameter file as decribed
+below.
+
+The model driver implements the functional form:
+
+       phi_{ij}(r) = 4 * epsilon_{ij} *
+                     [ (sigma_{ij}/r)^12 - (sigma_{ij}/r)^6 ] + shift_{ij},
+
+where i, j = 0, 1, 2, ..., N-1, and N is the number of supported species.
+
+
+The format of the parameter file is as follows:
+
+* Blank lines and lines beginning with the `#' character are ignored.
+
+* Line 0 : N, shift
+   - N         : integer number of distinct particle species
+   - shift     : integer value: 0-for no shift; 1-for shifts.
+                 All shift values are computed at run time
+* Lines 1,2,...: species_i, species_j, cutoff, epsilon, sigma
+   - species_i : A valid KIM API particle species string
+   - species_j : A valid KIM API particle species string
+   - cutoff    : double cutoff distance value (in Angstroms) for phi_{ij}(r)
+   - epsilon   : double energy value (in eV) for  epsilon_{ij}
+   - sigma     : double sigma distance value (in Angstroms) for sigma_{ij}
+
+
+The parameter file must contain all "like-like" parameter sets (i.e., lines
+where species_i and species_j are identical) for each species which occurs in
+the file.  The model driver uses the Lorentz-Berthelot rules to generate any
+"cross-interaction" parameter sets which are not provided.  The model driver
+sets the `influcenceDistance' argument to max_{ij}(cutoff_{ij}).  The model
+driver uses this same influenceDistance as its NeighborListCutoff value.

@@ -1,0 +1,63 @@
+#
+# KIM-API: An API for interatomic models
+# Copyright (c) 2013--2022, Regents of the University of Minnesota.
+# All rights reserved.
+#
+# Contributors:
+#    Ellad B. Tadmor
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+
+Spring-modified Lennard-Jones (SLJ) pair potential model for Ar.
+
+V = 0.5 \sum_i \sum_j eps_i eps_j 4 [ (sig/r_ij)^12 - (sig/r_ij)^6 ] (1)
+
+where
+      eps_i = 0.5 \sum_k spring (r_ik)^2                             (2)
+
+The potential parameters are `sig` and the spring constant `sig`.
+
+This potential uses two cutoffs and requires neighbors of padding
+atoms for the summ in (2).
+
+The loops in (2) are over all atoms for which r_ik < cutoff1
+
+The loops in (1) are over all atoms for which r_ij < cutoff2
+
+For the Ar parameterization, cutoff1 is set so that only nearest
+neighbors contribute in the equilibrium 0K fcc structure, and
+cutoff2 is set to include the third neighbor distance. The potential
+is discontinuous at both cutoffs. It is designed for testing purposes
+only.
+
+The equilibrium spacing for the fcc structure predicted by the SLJ potential is
+
+a0 = 2^(1/3)/sqrt(3) * (94297/491)^(1/6) sig = 1.74724 sig
+
+The first, second and third neighbor distances in fcc are then:
+
+r_NN1 = a0/sqrt(2)   = 1.235 sig
+r_NN2 = a0           = 1.747 sig
+r_NN3 = a0*sqrt(3/2) = 2.140 sig
+
+The parameters `sig` and `spring` are selected to reproduce the experimental
+properties of fcc argon:
+
+a0  = 5.26 A
+E_c = 0.0104 eV

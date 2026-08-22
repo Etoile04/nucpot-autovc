@@ -1,0 +1,61 @@
+#
+# KIM-API: An API for interatomic models
+# Copyright (c) 2013--2022, Regents of the University of Minnesota.
+# All rights reserved.
+#
+# Contributors:
+#    Richard Berger
+#    Christoph Junghans
+#    Ryan S. Elliott
+#    Alexander Stukowski
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+#
+# Release: This file is part of the kim-api-2.4.2 package.
+#
+
+
+#
+# - KIM-API package
+#
+
+set(KIM-API_VERSION_STRING "@PROJECT_VERSION_STRING@")
+set(KIM-API_UID "@KIM_API_UID@")
+
+# REMOVE THIS IF AND KEEP BODY FOR 3.0.0 RELEASE!!!
+if("${KIM-API_FIND_VERSION}" VERSION_GREATER "2.1.99")
+  include("${CMAKE_CURRENT_LIST_DIR}/kim-api-macros.cmake")
+  include("${CMAKE_CURRENT_LIST_DIR}/kim-api-targets.cmake")
+endif()
+
+# REMOVE THE BELOW FOR 3.0.0 RELEASE!!!
+if("${KIM-API_FIND_VERSION}" VERSION_LESS "2.2.0")
+  include("${CMAKE_CURRENT_LIST_DIR}/kim-api-pre-2.2-compatibility.cmake")
+endif()
+
+if(NOT KIM-API_FIND_QUIETLY)
+  include(FindPackageMessage)
+  if(TARGET KIM-API::kim-api)
+    get_target_property(_kim_loc KIM-API::kim-api IMPORT_LOCATION)
+  else()
+    set(_kim_loc "${KIM_API_PROJECT_NAME}-${KIM_API_VERSION_STRING}")
+  endif()
+  find_package_message(KIM-API "Found KIM-API: ${_kim_loc}" "KIM-API")
+  unset(_kim_loc)
+endif()

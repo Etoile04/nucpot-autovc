@@ -1,0 +1,60 @@
+#
+# KIM-API: An API for interatomic models
+# Copyright (c) 2013--2022, Regents of the University of Minnesota.
+# All rights reserved.
+#
+# Contributors:
+#    Richard Berger
+#    Christoph Junghans
+#    Ryan S. Elliott
+#    Alexander Stukowski
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+#
+# Release: This file is part of the kim-api-2.4.2 package.
+#
+
+
+# pkg-config file for @PROJECT_NAME@
+# https://people.freedesktop.org/~dbn/pkg-config-guide.html
+# Usage: cc `pkg-config --cflags --libs lib@PROJECT_NAME@` -o myapp myapp.c
+# after you added ${pcfiledir} to PKG_CONFIG_PATH,
+# e.g. export PKG_CONFIG_PATH=${pcfiledir}
+
+CMAKE_C_COMPILER=@KIM_API_CMAKE_C_COMPILER@
+CMAKE_CXX_COMPILER=@KIM_API_CMAKE_CXX_COMPILER@
+CMAKE_Fortran_COMPILER=@KIM_API_CMAKE_Fortran_COMPILER@
+PROJECT_NAME=@PROJECT_NAME@
+
+prefix=@_installdir_rel@
+bindir=@_bindir_rel@
+libexecdir=@_libexecdir_rel@
+sysconfdir=@_sysconfdir_rel@
+libdir=@_libdir_rel@
+includedir=@_includedir_rel@/@PROJECT_NAME@
+moddir=@_moddir_rel@
+docdir=@_docdir_rel@
+
+Name: lib@PROJECT_NAME@
+Description: The @PROJECT_NAME@ package is a system-level library that aims to give computer programmers the ability to write atomistic or molecular simulation programs that can seamlessly interface with implementations of interatomic models, regardless of the programming language (C, C++, Fortran, Python, etc.) in which the codes are written.
+URL: https://openkim.org/kim-api
+Version: @PROJECT_VERSION_STRING_WITHOUT_BUILD_METADATA@
+Requires:
+Cflags: -I${includedir} -I${moddir}
+Libs: -L${libdir} @KIM_API_RPATH_FLAG@ -l${PROJECT_NAME}

@@ -1,0 +1,646 @@
+#
+# KIM-API: An API for interatomic models
+# Copyright (c) 2013--2022, Regents of the University of Minnesota.
+# All rights reserved.
+#
+# Contributors:
+#    Ryan S. Elliott
+#    Ellad B. Tadmor
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+#
+# Release: This file is part of the kim-api-2.4.2 package.
+#
+
+
+============================= The KIM API package =============================
+
+This file contains instructions for installing the KIM API package.
+
+
+TABLE OF CONTENTS
+
+A. System requirements
+
+B. Quick start
+
+C. Package concepts and operation overview
+   C.1 KIM API library
+   C.2 Collections for Model Drivers (MDs), Portable Models (PMs), and
+       Simulator Models (SMs)
+       C.2.1 The system-collection
+       C.2.2 The user-collection
+       C.2.3 The environment-variable-collection
+       C.2.4 The CWD-collection
+   C.3 Helper utilities
+
+D. KIM API Installation
+   D.1 Typical build scenario
+   D.2 CMake build options
+       D.2.1 Compiler selection
+       D.2.2 CMAKE_BUILD_TYPE
+       D.2.3 Installation prefix
+       D.2.4 KIM API specific build options
+   D.3 Installing multiple versions
+   D.4 Uninstall the KIM API
+
+E. Adding MDs, PMs, and SMs to the collections
+   E.1 Adding MDs, PMs, and SMs to the system-collection
+   E.2 Adding MDs, PMs, and SMs to the user-collection
+   E.3 Adding MDs, PMs, and SMs to the environment-variable-collection
+   E.4 Adding MDs, PMs, and SMs to the CWD-collection
+   E.5 Adding MDs, PMs, and SMs from a local source directory
+   E.6 Manually adding MDs, PMs, and SMs
+
+
+-------------------------------------------------------------------------------
+
+A. SYSTEM REQUIREMENTS
+
+
+To install and run the KIM API package you need the following:
+
+1. A Unix/Linux/macOS system.
+
+2. CMake (3.10 or later).
+
+3. GNU compilers (gcc, g++, gfortran) version 4.8.x or higher or the
+   corresponding Intel compilers, version 11.1 or higher.  Other compilers may
+   also work.
+
+4. wget or curl, sed, grep, tar, uname, etc. (used by the
+   kim-api-collections-management utility).
+
+5. Doxygen and Graphviz (for generating the documentation).
+
+6. The bash-completion package (for facilitating command-line usage of the
+   helper utilities).
+
+7. pkg-config can be used by code needing to link against the kim-api library.
+
+
+-------------------------------------------------------------------------------
+
+B. QUICK START: For those who don't like to read and are a bit audacious.
+
+Try the following:
+
+   $ mkdir build && cd build
+   $ cmake .. -DCMAKE_BUILD_TYPE=Release
+   $ make
+   $ sudo make install
+   $ sudo ldconfig
+
+For more information, see section D.
+
+-------------------------------------------------------------------------------
+
+C. PACKAGE LAYOUT AND OPERATION OVERVIEW
+
+
+The KIM API package is a system-level library that aims to give computer
+programmers the ability to write atomistic or molecular simulation programs
+(Simulators) that can seamlessly interface with implementations of interatomic
+potentials (Portable Models, PMs), regardless of the programming language in
+which the codes are written.  The KIM API package provides a dedicated Portable
+Model Interface (PMI) for use by simulators and PMs and referred to as the KIM
+API/PMI.  A PM can include code and parameters all in one.  Or, a PM can
+include just parameters and use a separate Model Driver (MD) library containing
+the code.  There are also Simulator Models (SMs) that only work with a specific
+simulator.  The KIM API package provides a dedicated Simulator Model Interface
+(SMI) for use by simulators and SMs and referred to as the KIM API/SMI.  In
+addition to the main KIM API library, a small number of associated helper
+utilities are provided.
+
+C.1. KIM API Library
+
+The KIM API library provides the necessary routines for a Simulator to interact
+with a PM or SM.  It also contains an interface for discovering what MDs, PMs,
+and SMs are available in the KIM API Collections.  MDs, PMs, and SMs are built
+and linked against the KIM API library, then installed in one of the
+collections (see below) so that they are available for use with a simulator.
+Simulators are built and linked against the KIM API library so that they can
+access and use any of the available PMs and/or SM in the various collections.
+
+C.2 COLLECTIONS FOR MODEL DRIVERS (MDs), PORTABLE MODELS (PMs), AND
+    SIMULATOR MODELS (SMs)
+
+The KIM API supports four Collections of Items.  These are the
+"system-collection", the "user-collection", the
+"environment-variable-collection", and the "CWD-collection" as described below.
+Each collection consists of separate sets of three Item Types: MDs, PMs, and
+SMs.  When the KIM API needs to use a particular MD, PD, or SM, it looks for
+the item by type and name, first in the CWD-collection, then in the
+environment-variable-collection, then in the user-collection, and finally in
+the system-collection.  It uses the first match that it finds.  Note, it is
+possible for a PM and its associated MD to be located in different collections.
+The search for each is a separate and independent procedure.
+
+See also the documentation for the Collections Interface (c++:
+KIM::Collections; c: KIM_Collections; and Fortran: kim_collections_module).
+
+C.2.1 THE SYSTEM-COLLECTION
+
+The system-collection is a collection of MDs, PMs, and SMs that are available
+to all simulators that use the KIM API library.  By default, this collection is
+located in the same subdirectory as the KIM API library.  (See also the
+"KIM_API_SYSTEM_*_DIR" build options in section D.2.4, below.)
+
+MDs, PMs, and SMs may be built and installed to the system-collection at
+anytime after the KIM API has been built and installed.
+
+C.2.2 THE USER-COLLECTION
+
+The user-collection is a collection of MDs, PMs, and SMs that are available
+only to the user who owns the process for the simulator that uses the KIM API
+library.  This collection is located in subdirectories that are specified by a
+configuration file.  The user-collection may be populated with MDs, PMs, and
+SMs after the KIM API has been built and installed.
+
+The configuration file is named "${HOME}/.kim-api/<kim-api-uid>/config" by
+default, where <kim-api-uid> is a unique identifier for the particular
+installation of the kim-api being used (this allows multiple, independent,
+installations on a single machine).  Here "${HOME}" is the user's home
+directory.  (See item D below for build options controlling this default file
+name.)  If the "KIM_API_CONFIGURATION_FILE" environment variable is set, its
+value (interpreted as an absolute file name) will supersede the default
+location and name of the configuration file.  For example, the following
+commands will instruct the KIM API library to use a file named "kim-config" in
+the /my-kim-stuff folder
+
+   $ export KIM_API_CONFIGURATION_FILE=/my-kim-stuff/kim-config
+
+If the configuration file does not exist, the KIM API library will create it
+with a default configuration specifying that the user-collection files are
+stored in "${HOME}/.kim-api/<kim-api-uid>/model-drivers/",
+"${HOME}/.kim-api/<kim-api-uid>/portable-models/", and
+"${HOME}/.kim-api/<kim-api-uid>/simulator-models/".  More generally, the values
+in the configuration file may contain colon ':' (on Windows: semi-colon ';')
+separated lists of fully-qualified directory names (starting, strictly, with
+'/', '~/' or a root drive letter like 'C:/').  (See item D below for build
+options controlling these defaults.)
+
+C.2.3 THE ENVIRONMENT-VARIABLE-COLLECTION
+
+The environment-variable-collection is a collection of MDs, PMs, and SMs that
+are specified by the run-time environment of the process for the simulator that
+uses the KIM API library.  The locations of this collection are specified by
+the environment variables "KIM_API_MODEL_DRIVERS_DIR",
+"KIM_API_PORTABLE_MODELS_DIR", and "KIM_API_SIMULATOR_MODELS_DIR".  These
+variables should contain colon ':' (on Windows: semi-colon ';') separated lists
+of absolute directory names where the collection MDs, PMs, and SMs, respectively,
+are located.  (For example, in bash you could execute the command
+
+   $ export KIM_API_PORTABLE_MODELS_DIR=/my-kim-stuff/models-i-am-developing:/my-kim-stuff/misc-portable-models
+
+to have the KIM API look for PMs in /my-kim-stuff/models-i-am-developing first
+and then look in /my-kim-stuff/misc-portable-models.  (Similarly for MDs and
+SMs.)  The environment-variable-collection may be populated with MDs, PMs, and
+SMs after the KIM API has been built and installed.
+
+C.2.4 THE CWD-COLLECTION
+
+The CWD-collection is a collection of MDs, PMs, SMs that are available to a
+simulator at run-time.  The collection is located in the simulator process's
+current working directory (CWD).  The CWD-collection may be populated with MDs,
+PMs, and SMs after the KIM API has been built and installed.
+
+C.3 HELPER UTILITIES
+
+The KIM API package also includes a utility for managing the MDs, PMs, and SMs
+contained in the various collections and for managing the configuration file.
+This utility is called "kim-api-collections-management".  The KIM API package
+installs bash completion scripts that are designed to work with the
+"bash-completion" package (https://github.com/scop/bash-completion).  When
+"bash-completion" is installed and activated on the system, tab-completions for
+the collections management utility should be automatically loaded and available
+for use.
+
+In addition, when the KIM API package is installed to a "Local (non-global)"
+(see D below) directory, the package also installs the "kim-api-activate" and
+"kim-api-deactivate" scripts.  The activate script adds the utilities to the
+executable PATH, adds the KIM API library to the PKG_CONFIG_PATH so that the
+pkg-config utility can find it, and loads bash tab-completion support for the
+collections management utility.  The deactivate script removes what the
+activate script added.
+
+
+-------------------------------------------------------------------------------
+
+D. KIM API INSTALLATION
+
+D.1 Typical Build Scenario
+
+Here, the typical KIM API build and install process is detailed and the
+system-collection is populated with the example MDs, PMs, and SMs, as well as a
+single PM and its associated MD, both from openkim.org.  Additionally, one of
+the example simulators is copied to the user's home directory and used to test
+the KIM API.  The KIM API package uses the CMake build system.  See the CMake
+documentation (https://cmake.org/cmake/help/v3.10/) for help with CMake
+settings.  For some common CMake settings and KIM API specific settings, see
+D.2 below.
+
+The commands given below are for the bash shell.
+
+By default packages are installed to the Global prefix directory "/usr/local".
+Here we assume that "/usr/local/bin" is included as part of the system's
+standard PATH setting.
+
+First, we will create a working space and obtain the source package
+
+   $ export WORKSPACE="${HOME}/kim-api-workspace"
+   $ mkdir "${WORKSPACE}"
+   $ cd "${WORKSPACE}
+   $ wget https://s3.openkim.org/kim-api/kim-api-X.Y.Z.txz  # replace X, Y, and Z with the current version numbers
+   $ tar Jxvf kim-api-X.Y.Z.txz
+   $ cd kim-api-X.Y.Z
+
+We will set an environment variable to point the the KIM API source.
+
+   $ export KIM_API_SOURCE="${WORKSPACE}/kim-api-X.Y.Z"  # replace X, Y, and Z with the current version numbers
+
+Next the configuration and build process begins.  (Note: lines beginning with
+"$", without leading whitespace, in this file are extracted and used in the KIM
+API automated Continuous-Integration (CI) testing framework.)
+
+$ cd "${WORKSPACE}"
+$ mkdir build
+$ cd build
+$ cmake ${KIM_API_SOURCE} -DCMAKE_BUILD_TYPE=Release
+$ make -j2
+
+If you want, build the documentation.
+
+$ make docs
+
+If you want, before installing the package, you can run the tests.
+
+$ make test
+
+Now, install the package (and docs, if built).
+
+$ sudo make install
+$ sudo ldconfig  # All linux systems should do this; on Redhat-like systems you may need to first add /usr/local/lib to /etc/ld.so.conf
+$ cp -r "${KIM_API_SOURCE}/examples/simulators/utility_forces_numer_deriv" "${WORKSPACE}/"
+$ cd "${WORKSPACE}"
+
+If you want, you can now delete the source and build tree.  However, you may
+also want to preserve the "install_manifest.txt" file which would be needed for
+uninstalling the KIM API package (see D.4 below).
+
+   $ cp "${WORKSPACE}/build/install_manifest.txt" "${WORKSPACE}/install_manifest.txt"
+   $ rm -r "${WORKSPACE}/build
+
+Now, we can build the simulator using the KIM API library that we have just
+installed.
+
+$ cd utility_forces_numer_deriv
+$ mkdir build
+$ cd build
+$ cmake ..
+$ make
+
+Try it with one of the example models:
+
+$ printf "ex_model_Ar_P_LJ" | ./utility_forces_numer_deriv
+
+Next, we can try it with a model installed from https://openkim.org:
+
+$ kim-api-collections-management install system --sudo EDIP_JustoBazantKaxiras_1998_Si__MO_958932894036_002
+$ printf "EDIP_JustoBazantKaxiras_1998_Si__MO_958932894036_002" | ./utility_forces_numer_deriv
+
+Congratulations, you have now successfully installed the KIM API.  If you would
+like to learn more about the KIM API, read the documentation in the docs
+directory (/usr/local/share/doc/kim-api).
+
+If you would like to install the latest release of all models from
+https://openkim.org, you can do:
+
+   $ kim-api-collections-management install system --sudo OpenKIM
+
+D.2 CMAKE BUILD OPTIONS
+
+The KIM API defines a number of specific build options which are detailed in
+this section.  But first, some notes about a few important standard CMake
+options.
+
+D.2.1 COMPILER SELECTION
+
+By default CMake will search for appropriate compilers available on your
+system.  Generally, it selects reasonable choices.  However, if you wish to
+force CMake to use specific compilers, you can do so with environment variables
+set on the command line.  For example, suppose you have the latest GNU Compiler
+Collection (GCC) version X installed with the compilers named 'gcc-X', 'g++-X',
+and 'gfortran-X', for the C, C++, and Fortran compilers, respectively.  Then,
+to force CMake to use these compilers, replace the command (from above)
+
+   $ cmake .. -DCMAKE_BUILD_TYPE=Release
+
+with
+
+   $ CC=gcc-X CXX=g++-X FC=gfortran-X cmake .. -DCMAKE_BUILD_TYPE=Release
+
+D.2.2 CMAKE_BUILD_TYPE
+
+CMake defines the option CMAKE_BUILD_TYPE which can be set to "Debug",
+"Release", "RelWithDebInfo", "MinSizeRel", or it can be empty.  (See the CMake
+documentation for more details.)  By default CMAKE_BUILD_TYPE is empty.  In
+short, while developing code or debugging, the value of "Debug" or
+"RelWithDebInfo" should be used.  When building for production runs one of the
+other values should be used.
+
+D.2.3 INSTALLATION PREFIX
+
+Here and below, all paths or filepaths must be specified in a format
+appropriate for the OS (windows or linux).  Windows paths are of the form
+C:\dir1\dir2 (forward slashes may be used instead to avoid escaping issues:
+C:/dir1/dir2) and linux paths are of the form /dir1/dir2.
+
+By default CMake installs the KIM API package under the Global prefix
+"/usr/local".  This is referred to as a "Global" (or system-wide) installation.
+It is available to all users of the system.  (Other "Global" prefix values are
+"/" and "/usr".)  However, such installations require root user permissions (as
+implied by the use of the "sudo" command above).  If you do not have root user
+permission and/or do not want to install the KIM API to the global location,
+you can change where CMake installs the KIM API by replacing the command (from
+above)
+
+   $ cmake .. -DCMAKE_BUILD_TYPE=Release
+
+with
+
+   $ cmake .. -DCMAKE_INSTALL_PREFIX="/install/prefix/path" -DCMAKE_BUILD_TYPE=Release
+
+where "/install/prefix/path" should be replaced with your desired prefix.  For
+example, to install the KIM API in the "local" subdirectory of your home
+directory, use "${HOME}/local".  When installed in such a directory, the user
+may employ the "kim-api-activate" utility to setup the PATH and bash
+completions.  For example:
+
+   $ source ${HOME}/local/bin/kim-api-activate
+
+D.2.4 KIM API SPECIFIC BUILD OPTIONS
+
+The KIM API defines two additional regular build options and additional
+advanced options.
+
+* KIM_API_LOG_MAXIMUM_LEVEL (="DEBUG" if CMAKE_BUILD_TYPE is "Debug", otherwise
+  ="INFORMATION") This option takes one of the following six values "SILENT",
+  "FATAL", "ERROR", "WARNING", "INFORMATION", "DEBUG".  This value controls, at
+  compile-time, which type of log messages can be printed to the "kim.log"
+  file.
+
+* KIM_API_BUILD_EXAMPLES (=ON) When ON CMake will build the example MDs, PMs,
+  SMs and Simulators.  NOTE: this option may be removed/changed in future
+  releases when the examples are incorporated into the documentation.
+
+Additionally, the KIM API defines the following advanced build options.
+
+* KIM_API_PROJECT_NAME (="kim-api") This value controls the naming of many
+  aspects of the package build.  Generally this should not be changed.  It can
+  be used to build and install, on the same machine, two different copies
+  (typically different versions) of the package.
+
+* KIM_API_BASE64_BUFFERSIZE (="16777216") Sets the buffer size for the C++
+  base64 encode/decode routines used in the kim-api.
+
+* KIM_API_ENABLE_SANITIZE (=OFF) When ON this enables the AddressSanitizer
+  library for detecting memory corruption bugs.
+
+* KIM_API_ENABLE_COVERAGE (=OFF) When ON this enables gcov code coverage.
+
+* KIM_API_CONFIGURATION_TIMESTAMP (=<utc-time-of-cmake-configuration>) This is
+  used as part of the <kim-api-uid> universal ID for the kim-api installation.
+
+* KIM_API_CMAKE_C_COMPILER (="${CMAKE_C_COMPILER}") This value is recorded and
+  used after installation for compilation of items (MDs, PMs, SMs, etc.) to
+  ensure binary compatibility with the installed KIM API.
+
+* KIM_API_CMAKE_CXX_COMPILER (="${CMAKE_CXX_COMPILER}") This value is recorded
+  and used after installation for compilation of items (MDs, PMs, SMs, etc.)
+  to ensure binary compatibility with the installed KIM API.
+
+* KIM_API_CMAKE_Fortran_COMPILER (="${CMAKE_Fortran_COMPILER}") This value is
+  recorded and used after installation for compilation of items (MDs, PMs, SMs,
+  etc.) to ensure binary compatibility with the installed KIM API.
+
+* KIM_API_USER_CONFIGURATION_FILE (=".${PROJECT_NAME}/${KIM_API_UID}/config")
+  This value determines the default name of the KIM API user configuration file.
+  If the value corresponds to a relative path (does not start with "/"), then it
+  is interpreted as relative to the user's home directory "${HOME}".
+
+* KIM_API_USER_MODEL_DRIVERS_DIR_DEFAULT
+  (="~/.${PROJECT_NAME}/<kim-api-uid>/model-drivers") This value specifies the
+  default colon ':' (semicolon ';' on windows) separated list of the MD
+  directory locations for the user collection.
+
+* KIM_API_USER_PORTABLE_MODELS_DIR_DEFAULT
+  (="~/.${PROJECT_NAME}/<kim-api-uid>/portable-drivers") This value specifies
+  the default colon ':' (semicolon ';' on windows) separated list of the PM
+  directory locations for the user collection.
+
+* KIM_API_USER_SIMULATOR_MODELS_DIR_DEFAULT
+  (="~/.${PROJECT_NAME}/<kim-api-uid>/simulator-models") This value specifies
+  the default colon ':' (semicolon ';' on windows) separated list of the SM
+  directory locations for the user collection.
+
+* KIM_API_SYSTEM_MODEL_DRIVERS_DIR
+  (="${CMAKE_INSTALL_FULL_LIBDIR}/${PROJECT_NAME}/model-drivers") This value
+  specifies a colon ':' (semicolon ';' on windows) separated list of the MD
+  directory locations in the system collection.  If the value starts with a
+  colon (semicolon on windows), cmake will update it by prepending the default
+  value.
+
+* KIM_API_SYSTEM_PORTABLE_MODELS_DIR
+  (="${CMAKE_INSTALL_FULL_LIBDIR}/${PROJECT_NAME}/portable-models") This value
+  specifies a colon ':' (semicolon ';' on windows) separated list of the PM
+  directory locations in the system collection.  If the value starts with a
+  colon (semicolon on windows), cmake will update it by prepending the default
+  value.
+
+* KIM_API_SYSTEM_SIMULATOR_MODELS_DIR
+  (="${CMAKE_INSTALL_FULL_LIBDIR}/${PROJECT_NAME}/simulator-models") This value
+  specifies a colon ':' (semicolon ';' on windows) separated list of the SM
+  directory locations in the system collection.  If the value starts with a
+  colon (semicolon on windows), cmake will update it by prepending the default
+  value.
+
+D.3 Installing multiple versions
+
+On linux and macOS systems if you intend to install multiple versions of the
+KIM API using the same installation prefix
+("-DCMAKE_INSTALL_PREFIX=/install/prefix/path" argument to cmake) you must take
+care that the installations do not overwrite each other.  If you intend to
+install multiple versions using the same prefix you must use the
+"-DKIM_API_PROJECT_NAME=project-name" argument (See D.2.4 above) to cmake and
+use a unique value (any string without whitespace or control characters is
+valid) for each installation.
+
+Full support for the "-DKIM_API_PROJECT_NAME" argument, as described here, was
+first available in v2.0.2.  For example, suppose the current version of the KIM
+API were v3.2.1, and you want to also install KIM API v3.0.0, and v2.1.1.
+Then, you would configure each version as follows:
+
+ * v3.2.1
+
+   $ cmake .. [additional args]  # use default ("kim-api") for current version.
+
+ * v3.0.0
+
+   $ cmake .. -DKIM_API_PROJECT_NAME=kim-api3.0 [additional args]
+
+ * v2.1.1
+
+   $ cmake .. -DKIM_API_PROJECT_NAME=kim-api2.1 [additional args]
+
+D.4 Uninstall the KIM API
+
+When the KIM API package is installed, CMake creates a file in the build tree
+named "install_manifest.txt".  For the above commands this file would be
+located at "${HOME}/kim-api-X.Y.Z/build/install_manifest.txt".  The manifest
+file contains the absolute file name of every file installed as part of the KIM
+API package.  The contents of the install_manifest.txt file can be used to
+remove these files and, thus, uninstall the KIM API package.  Thus, the
+install_manifest.txt file should be saved for later use, if necessary.
+
+For example, the following commands could be used to uninstall the KIM API
+package (assuming the "install_manifest.txt" file is located in your home
+directory).
+
+   $ cd "${HOME}"
+   $ while read line || test -n "${line}"; do sudo rm -f "${line}"; done < install_manifest.txt
+
+A more sophisticated set of commands could also remove any empty subdirectories
+left behind by this process.
+
+It may also be desirable to remove the user configuration file and user
+collection directories.
+
+   $ rm -rf "${HOME}/.kim-api"
+
+
+-------------------------------------------------------------------------------
+
+E. ADDING MDs, PMs, and SMs TO THE COLLECTIONS
+
+
+Here we describe how to add MDs, PMs, and SMs to the system-collection,
+user-collection, environment-variable-collection, and the CWD-collection.
+
+E.1 ADDING MDs, PMs, and SMs TO THE SYSTEM-COLLECTION
+
+Once you have the KIM API installed, it is easy to add additional MDs, PMs, and
+SMs to the system-collection.
+
+$ cd "${WORKSPACE}"
+
+$ kim-api-collections-management install system --sudo Morse_Shifted_Jelinek_1972_Ar__MO_831902330215_003
+$ kim-api-collections-management install system --sudo Sim_LAMMPS_ADP_PunDarlingKecskes_2015_CuTa__SM_399364650444_000
+
+The kim-api-collections-management utility automatically installs the necessary
+MD too.  You can see the items in the various collections by executing the
+following command.
+
+$ kim-api-collections-management list
+
+Now we can test the newly installed PM.
+
+$ cd "${WORKSPACE}/utility_forces_numer_deriv/build"  # we'll assume this is already built
+$ printf "Morse_Shifted_Jelinek_1972_Ar__MO_831902330215_003" | ./utility_forces_numer_deriv
+
+E.2 ADDING MDs, PMs, and SMs TO THE USER-COLLECTION
+
+Adding MDs, PSs, and SMs to the user-collection is similar.
+
+$ cd "${WORKSPACE}"
+
+$ kim-api-collections-management install user LJ_Shifted_Bernardes_1958HighCutoff_Ar__MO_242741380554_003
+$ kim-api-collections-management install user Sim_LAMMPS_AGNI_BotuBatraChapman_2017_Al__SM_666183636896_000
+$ kim-api-collections-management list
+$ cd "${WORKSPACE}/utility_forces_numer_deriv/build"  # we'll assume this is already built
+$ printf "LJ_Shifted_Bernardes_1958HighCutoff_Ar__MO_242741380554_003" | ./utility_forces_numer_deriv
+
+E.3 ADDING MDs, PMs, and SMs TO THE ENVIRONMENT-VARIABLE-COLLECTION
+
+Adding MDs, PMs, and SMs to the environment-variable-collection is similar.
+
+$ cd "${WORKSPACE}"
+
+$ mkdir -p "${WORKSPACE}/my-env-collection/model-drivers"
+$ export KIM_API_MODEL_DRIVERS_DIR="${WORKSPACE}/my-env-collection/model-drivers"
+$ mkdir -p "${WORKSPACE}/my-env-collection/portable-models"
+$ export KIM_API_PORTABLE_MODELS_DIR="${WORKSPACE}/my-env-collection/portable-models"
+$ mkdir -p "${WORKSPACE}/my-env-collection/simulator-models"
+$ export KIM_API_SIMULATOR_MODELS_DIR="${WORKSPACE}/my-env-collection/simulator-models"
+$ kim-api-collections-management install environment Morse_Shifted_GirifalcoWeizer_1959HighCutoff_Cu__MO_151002396060_003
+$ kim-api-collections-management install environment Sim_LAMMPS_BOP_WardZhouWong_2012_CdZnTe__SM_409035133405_000
+$ kim-api-collections-management list
+$ cd "${WORKSPACE}/utility_forces_numer_deriv/build"  # we'll assume this is already built
+$ printf "Morse_Shifted_GirifalcoWeizer_1959HighCutoff_Cu__MO_151002396060_003" | ./utility_forces_numer_deriv
+
+E.4 ADDING MDs, PMs, and SMs TO THE CWD-COLLECTION
+
+Adding MDs, PMs, and SMs to the CWD-collection is, again, similar.
+
+$ cd "${WORKSPACE}"
+
+$ kim-api-collections-management install CWD Exp6_KongChakrabarty_1973_ArNe__MO_946046425752_002
+$ kim-api-collections-management install CWD Sim_LAMMPS_MEAM_EtesamiAsadi_2018_Ni__SM_333792531460_000
+$ kim-api-collections-management list
+$ printf "Exp6_KongChakrabarty_1973_ArNe__MO_946046425752_002" | "${WORKSPACE}/utility_forces_numer_deriv/build/utility_forces_numer_deriv"  # we'll assume this is already built
+
+E.5 Adding MDs, PMs, and SMs from a local source directory
+
+The kim-api-collections-management utility allows for the installation of items
+from a directory on the local file system.  This is useful if you are
+developing an item or do not have network access to openkim.org, but already
+have the source code downloaded.  We'll assume that the item's source code
+(including the CMakeLists.txt file, parameter files, etc) you want to install
+are in directory "${WORKSPACE}/item-source".  Then you simply provide this
+directory name instead of the item name.
+
+   $ kim-api-collections-management install user "${WORKSPACE}/item-source"
+
+E.6 Manually adding MDs, PMs, and SMs
+
+If necessary a MD, PM, or SM may be manually built and installed.  We'll assume
+the item's source code is in the current directory
+
+   $ mkdir build
+   $ cd build
+   $ cmake .. -DKIM_API_INSTALL_COLLECTION=SYSTEM
+   $ make
+   $ sudo make install
+
+The KIM_API_INSTALL_COLLECTION variable can also take values USER and
+ENVIRONMENT.
+
+*******************************************************************************
+
+SUPPORT
+
+Support is always available by posting questions with all relevant information
+to
+
+<https://matsci.org/openkim>
+
+Members of the OpenKIM development team actively monitor this forum and
+will do their best to respond to questions in a timely fashion.
+
+*******************************************************************************

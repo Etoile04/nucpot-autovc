@@ -1,0 +1,61 @@
+#
+# KIM-API: An API for interatomic models
+# Copyright (c) 2013--2022, Regents of the University of Minnesota.
+# All rights reserved.
+#
+# Contributors:
+#    Ryan S. Elliott
+#    Andrew Akerson
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+
+This directory (LennardJones612_UniversalShifted__MO_959249795837_003) contains
+a Lennard-Jones model defined for the entire set of KIM API particle types.
+
+* Sigma parameters are set to (2^{-1/6})*r_0, where r_0 is the atomic covalent
+  radius.  Covalent radii for elements 1--96 were taken from Wolfram
+  Mathematica's `ElementData["CovalentRadius"]' command.  Covalent radii for
+  elements 97--118 were taken from Fig. 3 of the article Pyykko, M. Atsumi,
+  J. Chem. Eur. J. 15 (2009) 12770.
+
+* Epsilon parameters are set to the bond dissociation energy.  Bond
+  dissociation energies for elements 1--55, 57--60, and 61--84 were taken from
+  the CRC Handbook of Chemistry and Physics, 91st Edition, Ed. W.H. Haynes,
+  2010. (as posted here:
+  http://staff.ustc.edu.cn/~luo971/2010-91-CRC-BDEs-Tables.pdf)
+
+  The value (cohesive energy, in this case) for element 56 was obtained from
+  p. 50 in Charles Kittel. Introduction to Solid State Physics, 8th
+  edition. Hoboken, NJ: John Wiley & Sons, Inc, 2005.
+
+  The bond dissociation energy value for element 61 was obtained from
+  "Interpolation scheme for the cohesive energies for the lanthanides and
+  actinides" Borje Johansson and Anders Rosengren, Phys. Rev. B 11, 1367 (1975).
+
+  The bond dissociation energies for elements 85--118 were not found in the
+  literature.  Thus, the values used here are approximated by subtracting 10%
+  from the value for the element in the same Group (column) and previous Period
+  (row) of the periodic table.
+
+* Cutoff parameters are set to 4.0*sigma.  This corresponds to a cutoff energy
+  of approximately epsilon/1024.
+
+* Lorentz-Berthelot mixing rules are used for interactions between unlike
+  particles. Each interaction potential is shifted to zero energy at its cutoff
+  distance.
