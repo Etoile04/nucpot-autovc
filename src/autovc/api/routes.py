@@ -1,7 +1,7 @@
 import logging
 import uuid
 from typing import Any, Generator
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from autovc.database import get_session_factory as _default_session_factory
 from autovc.models import Potential, VerificationJob, ReferenceValue
@@ -24,6 +24,30 @@ from autovc.core.grading import compute_overall_grade
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
+
+
+# ── Auth Dependency (Sprint 2) ──────────────────────────────────
+async def require_auth(request: Request):
+    """Verify authentication via Authorization header or HttpOnly cookie.
+
+    Token can be passed as:
+      - Authorization: Bearer <token>
+      - Cookie: access_token=<token>
+
+    Returns user payload on success, raises 401 on failure.
+    """
+    token = request.headers.get("Authorization")
+    if token and token.startswith("Bearer "):
+        token = token[7:]
+    else:
+        token = request.cookies.get("access_token")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    # TODO: validate JWT / session token against user store
+    # For now, any non-empty token is accepted (placeholder for Sprint 2 wiring)
+    return {"user": "authenticated", "token": token}
 
 _session_factory = None
 
@@ -72,10 +96,11 @@ def get_template_detail(template_id: str):
 
 # ── Potentials ──────────────────────────────────────────────────────
 @router.post("/potentials", response_model=PotentialResponse, status_code=201)
-def create_potential(body: PotentialCreate, db: Session = Depends(get_db)):
+def create_potential(body: PotentialCreate, db: Session = Depends(get_db), auth=Depends(require_auth)):
     if db.query(Potential).filter(Potential.name == body.name).first():
         raise HTTPException(409, f"Potential {body.name} already exists")
     pot = Potential(
+        id=str(uuid.uuid4()),
         name=body.name,
         potential_type=body.potential_type,
         species=body.species,
@@ -104,7 +129,7 @@ def get_potential(pid: str, db: Session = Depends(get_db)):
 
 # ── Verification v1 (legacy, SQLite-backed) ───────────────────────
 @router.post("/verification", response_model=VerificationJobResponse, status_code=202)
-def submit_verification(body: VerificationRequest, db: Session = Depends(get_db)):
+def submit_verification(body: VerificationRequest, db: Session = Depends(get_db), auth=Depends(require_auth)):
     pot = db.query(Potential).filter(Potential.name == body.potential_name).first()
     if not pot:
         raise HTTPException(404, f"Potential {body.potential_name} not found")
@@ -134,7 +159,7 @@ def get_verification(jid: int, db: Session = Depends(get_db)):
 
 # ── Verification v2 (Phase 2: parameterized, legacy SQLite) ──────
 @router.post("/verification/v2", response_model=VerificationJobResponse, status_code=202)
-def submit_verification_v2(body: ParameterizedVerificationRequest, db: Session = Depends(get_db)):
+def submit_verification_v2(body: ParameterizedVerificationRequest, db: Session = Depends(get_db), auth=Depends(require_auth)):
     """Submit a parameterized verification using a template."""
     try:
         properties = resolve_template_properties(body.template, body.property_overrides)
@@ -145,6 +170,7 @@ def submit_verification_v2(body: ParameterizedVerificationRequest, db: Session =
     if not pot:
         logger.info(f"Auto-creating potential: {body.potential_name}")
         pot = Potential(
+            id=str(uuid.uuid4()),
             name=body.potential_name,
             potential_type="unknown",
             species=body.species if hasattr(body, 'species') and body.species else [],
@@ -555,7 +581,7 @@ async def _run_lammps_verification(job_id: str, potential_id: str, template: str
 
 
 @router.post("/verify")
-async def submit_supabase_verify(body: SupabaseVerifyRequest):
+async def submit_supabase_verify(body: SupabaseVerifyRequest, auth=Depends(require_auth)):
     """Submit a verification job using Supabase + LAMMPS backend.
 
     1. Fetch potential metadata from Supabase
@@ -674,7 +700,7 @@ def get_reference(ref_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/references", response_model=ReferenceValueResponse, status_code=201)
-def create_reference(body: ReferenceValueCreate, db: Session = Depends(get_db)):
+def create_reference(body: ReferenceValueCreate, db: Session = Depends(get_db), auth=Depends(require_auth)):
     """Add a new reference value."""
     ref = ReferenceValue(id=str(uuid.uuid4()), **body.model_dump())
     db.add(ref)
@@ -684,7 +710,7 @@ def create_reference(body: ReferenceValueCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/references/{ref_id}", response_model=ReferenceValueResponse)
-def update_reference(ref_id: str, body: ReferenceValueUpdate, db: Session = Depends(get_db)):
+def update_reference(ref_id: str, body: ReferenceValueUpdate, db: Session = Depends(get_db), auth=Depends(require_auth)):
     """Update a reference value."""
     ref = db.query(ReferenceValue).filter(ReferenceValue.id == ref_id).first()
     if not ref:
@@ -697,7 +723,7 @@ def update_reference(ref_id: str, body: ReferenceValueUpdate, db: Session = Depe
 
 
 @router.delete("/references/{ref_id}", status_code=204)
-def delete_reference(ref_id: str, db: Session = Depends(get_db)):
+def delete_reference(ref_id: str, db: Session = Depends(get_db), auth=Depends(require_auth)):
     """Delete a reference value."""
     ref = db.query(ReferenceValue).filter(ReferenceValue.id == ref_id).first()
     if not ref:
@@ -759,7 +785,7 @@ def admin_list_ref_values(
 
 
 @router.post("/admin/reference-values/batch")
-def admin_batch_ref_values(body: AdminBatchBody, db: Session = Depends(get_db)):
+def admin_batch_ref_values(body: AdminBatchBody, db: Session = Depends(get_db), auth=Depends(require_auth)):
     """Batch approve or reject reference values."""
     results = []
     for rid in body.ids:
@@ -810,7 +836,7 @@ def admin_get_ref_value(ref_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/admin/reference-values/{ref_id}")
-def admin_patch_ref_value(ref_id: str, body: AdminRefValueUpdate, db: Session = Depends(get_db)):
+def admin_patch_ref_value(ref_id: str, body: AdminRefValueUpdate, db: Session = Depends(get_db), auth=Depends(require_auth)):
     """Update a reference value with audit logging."""
     ref = db.query(ReferenceValue).filter(ReferenceValue.id == ref_id).first()
     if not ref:
@@ -829,7 +855,7 @@ def admin_patch_ref_value(ref_id: str, body: AdminRefValueUpdate, db: Session = 
 
 
 @router.post("/admin/reference-values/{ref_id}/approve")
-def admin_approve_ref_value(ref_id: str, body: AdminApproveBody | None = None, db: Session = Depends(get_db)):
+def admin_approve_ref_value(ref_id: str, body: AdminApproveBody | None = None, db: Session = Depends(get_db), auth=Depends(require_auth)):
     """Approve a reference value."""
     ref = db.query(ReferenceValue).filter(ReferenceValue.id == ref_id).first()
     if not ref:
@@ -852,7 +878,7 @@ def admin_approve_ref_value(ref_id: str, body: AdminApproveBody | None = None, d
 
 
 @router.post("/admin/reference-values/{ref_id}/reject")
-def admin_reject_ref_value(ref_id: str, body: AdminRejectBody | None = None, db: Session = Depends(get_db)):
+def admin_reject_ref_value(ref_id: str, body: AdminRejectBody | None = None, db: Session = Depends(get_db), auth=Depends(require_auth)):
     """Reject a reference value."""
     ref = db.query(ReferenceValue).filter(ReferenceValue.id == ref_id).first()
     if not ref:
@@ -869,7 +895,7 @@ def admin_reject_ref_value(ref_id: str, body: AdminRejectBody | None = None, db:
 
 
 @router.delete("/admin/reference-values/{ref_id}")
-def admin_delete_ref_value(ref_id: str, db: Session = Depends(get_db)):
+def admin_delete_ref_value(ref_id: str, db: Session = Depends(get_db), auth=Depends(require_auth)):
     """Soft-delete a reference value."""
     ref = db.query(ReferenceValue).filter(ReferenceValue.id == ref_id).first()
     if not ref:

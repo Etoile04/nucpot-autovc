@@ -564,7 +564,8 @@ class LAMMPSRunner:
             self.lammps_bin = lammps_bin or getattr(self.settings, "LAMMPS_BIN", "lmp_serial")
             self._is_dp = False
             self._is_meam = False
-        self.potential_dir = potential_dir or os.environ.get("POTENTIAL_DIR", "/app/uploads")
+            _default_upload = Path(__file__).resolve().parents[3] / "uploads"  # repo root/uploads
+            self.potential_dir = potential_dir or os.environ.get("POTENTIAL_DIR", str(_default_upload))
         self.elements = potential_meta.get("elements", [])
         # Structure detection: explicit arg > meta.structure > meta.phase > meta.lammps_config.structure > "bcc"
         self.structure = (

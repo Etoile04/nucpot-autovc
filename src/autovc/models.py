@@ -46,7 +46,7 @@ class VerificationResult(Base):
 
 class ReferenceValue(Base):
     __tablename__ = "reference_values"
-    __table_args__ = {"schema": "public", "extend_existing": True}
+    __table_args__ = {"extend_existing": True}
 
     id = mapped_column(String(64), primary_key=True)
     element_system = mapped_column(String(64), nullable=False)

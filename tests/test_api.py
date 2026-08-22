@@ -8,6 +8,8 @@ from autovc.models import Potential, VerificationJob, VerificationResult
 import autovc.models  # noqa: F401 — register tables with Base.metadata
 from autovc.main import create_app
 
+AUTH_HEADER = {"Authorization": "Bearer test_token"}
+
 @pytest.fixture
 def client():
     engine = create_engine(
@@ -26,12 +28,16 @@ def test_health(client):
     assert client.get("/api/health").status_code == 200
 
 def test_create_potential(client):
-    r = client.post("/api/potentials", json={"name":"EAM_U","potential_type":"EAM","species":["U"]})
+    r = client.post("/api/potentials", json={"name":"EAM_U","potential_type":"EAM","species":["U"]}, headers=AUTH_HEADER)
     assert r.status_code == 201
     assert r.json()["name"] == "EAM_U"
 
+def test_create_potential_no_auth(client):
+    r = client.post("/api/potentials", json={"name":"EAM_U","potential_type":"EAM","species":["U"]})
+    assert r.status_code == 401
+
 def test_list_potentials(client):
-    client.post("/api/potentials", json={"name":"p1","potential_type":"EAM","species":["U"]})
+    client.post("/api/potentials", json={"name":"p1","potential_type":"EAM","species":["U"]}, headers=AUTH_HEADER)
     r = client.get("/api/potentials")
     assert r.status_code == 200 and len(r.json()) >= 1
 
@@ -39,14 +45,14 @@ def test_get_potential_404(client):
     assert client.get("/api/potentials/999").status_code == 404
 
 def test_submit_verification(client):
-    client.post("/api/potentials", json={"name":"EAM_V","potential_type":"EAM","species":["U"],"kim_model_id":"test_kim"})
-    r = client.post("/api/verification", json={"potential_name":"EAM_V","properties":["lattice_constant"]})
+    client.post("/api/potentials", json={"name":"EAM_V","potential_type":"EAM","species":["U"],"kim_model_id":"test_kim"}, headers=AUTH_HEADER)
+    r = client.post("/api/verification", json={"potential_name":"EAM_V","properties":["lattice_constant"]}, headers=AUTH_HEADER)
     assert r.status_code == 202
     assert r.json()["status"] == "pending"
 
 def test_get_verification(client):
-    client.post("/api/potentials", json={"name":"EAM_S","potential_type":"EAM","species":["U"]})
-    jr = client.post("/api/verification", json={"potential_name":"EAM_S","properties":["lattice_constant"]})
+    client.post("/api/potentials", json={"name":"EAM_S","potential_type":"EAM","species":["U"]}, headers=AUTH_HEADER)
+    jr = client.post("/api/verification", json={"potential_name":"EAM_S","properties":["lattice_constant"]}, headers=AUTH_HEADER)
     jid = jr.json()["id"]
     r = client.get(f"/api/verification/{jid}")
     assert r.status_code == 200

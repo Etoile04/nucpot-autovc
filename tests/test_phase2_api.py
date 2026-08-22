@@ -10,6 +10,8 @@ from autovc.models import Potential, VerificationJob, VerificationResult
 import autovc.models  # noqa: F401
 from autovc.main import create_app
 
+AUTH_HEADER = {"Authorization": "Bearer test_token"}
+
 
 @pytest.fixture
 def client():
@@ -53,14 +55,14 @@ class TestVerificationV2:
             "name": name,
             "potential_type": "EAM",
             "species": ["U"],
-        }).json()
+        }, headers=AUTH_HEADER).json()
 
     def test_submit_v2_basic_template(self, client):
         self._create_potential(client)
         r = client.post("/api/verification/v2", json={
             "potential_name": "test_pot",
             "template": "basic",
-        })
+        }, headers=AUTH_HEADER)
         assert r.status_code == 202
         data = r.json()
         assert set(data["properties_requested"]) == {"lattice_constant", "cohesive_energy"}
@@ -71,7 +73,7 @@ class TestVerificationV2:
             "potential_name": "test_pot2",
             "template": "basic",
             "property_overrides": ["bulk_modulus", "vacancy_formation_energy"],
-        })
+        }, headers=AUTH_HEADER)
         assert r.status_code == 202
         data = r.json()
         assert data["properties_requested"] == ["bulk_modulus", "vacancy_formation_energy"]
@@ -81,22 +83,23 @@ class TestVerificationV2:
         r = client.post("/api/verification/v2", json={
             "potential_name": "test_pot3",
             "template": "nonexistent",
-        })
+        }, headers=AUTH_HEADER)
         assert r.status_code == 400
 
     def test_submit_v2_potential_not_found(self, client):
+        # v2 auto-creates potential if not found (by design)
         r = client.post("/api/verification/v2", json={
             "potential_name": "missing",
             "template": "basic",
-        })
-        assert r.status_code == 404
+        }, headers=AUTH_HEADER)
+        assert r.status_code == 202
 
     def test_submit_v2_comprehensive_template(self, client):
         self._create_potential(client, "test_comp")
         r = client.post("/api/verification/v2", json={
             "potential_name": "test_comp",
             "template": "comprehensive",
-        })
+        }, headers=AUTH_HEADER)
         assert r.status_code == 202
         data = r.json()
         assert len(data["properties_requested"]) == 5
@@ -107,7 +110,7 @@ class TestVerificationV2:
             "potential_name": "test_params",
             "template": "basic",
             "parameter_overrides": {"lattice_guess": 3.5},
-        })
+        }, headers=AUTH_HEADER)
         assert r.status_code == 202
 
 
@@ -119,11 +122,11 @@ class TestVerificationReport:
     def test_report_pending_job(self, client):
         client.post("/api/potentials", json={
             "name": "rpt_pot", "potential_type": "EAM", "species": ["U"],
-        })
+        }, headers=AUTH_HEADER)
         job = client.post("/api/verification", json={
             "potential_name": "rpt_pot",
             "properties": ["lattice_constant"],
-        }).json()
+        }, headers=AUTH_HEADER).json()
 
         r = client.get(f"/api/verification/{job['id']}/report")
         assert r.status_code == 200
@@ -135,11 +138,11 @@ class TestVerificationReport:
     def test_report_structure(self, client):
         client.post("/api/potentials", json={
             "name": "rpt_pot2", "potential_type": "EAM", "species": ["U"],
-        })
+        }, headers=AUTH_HEADER)
         job = client.post("/api/verification", json={
             "potential_name": "rpt_pot2",
             "properties": ["lattice_constant", "cohesive_energy"],
-        }).json()
+        }, headers=AUTH_HEADER).json()
 
         r = client.get(f"/api/verification/{job['id']}/report")
         data = r.json()

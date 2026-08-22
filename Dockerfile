@@ -1,7 +1,7 @@
 # NucPot AutoVC - FastAPI Verification Service
 # Multi-stage build: builder (kimpy compile) + runtime
 
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends     build-essential cmake gfortran git pkg-config wget     && rm -rf /var/lib/apt/lists/*
 
@@ -18,7 +18,7 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
-FROM python:3.11-slim AS runtime
+FROM python:3.12-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends     redis-tools     && rm -rf /var/lib/apt/lists/*
 

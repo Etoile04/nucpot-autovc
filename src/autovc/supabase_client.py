@@ -3,8 +3,12 @@
 import os
 import httpx
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")  # sb_secret_... (backend only)
+from autovc.config import get_settings
+
+_settings = get_settings()
+
+SUPABASE_URL = _settings.SUPABASE_URL or os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = _settings.SUPABASE_SECRET_KEY or os.environ.get("SUPABASE_SECRET_KEY", "")  # sb_secret_... (backend only)
 
 
 def _headers() -> dict:

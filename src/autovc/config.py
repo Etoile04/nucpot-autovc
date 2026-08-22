@@ -29,7 +29,16 @@ class Settings(BaseSettings):
     GRADING_THRESHOLD_D: float = 0.20   # ≤20% → D
     # >20% → F
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # Auth (Sprint 2)
+    # Comma-separated SHA-256 hashes of valid API keys (avc_... prefix).
+    # Generate: python -c "import hashlib; print(hashlib.sha256(b'avc_YOUR_KEY').hexdigest())"
+    # Empty = dev mode (no auth enforced).
+    AUTH_API_KEYS_HASHED: str = ""
+    # Comma-separated SHA-256 hashes of admin-only keys.
+    # If empty, all authenticated users are admin (single-user mode).
+    AUTH_ADMIN_KEYS_HASHED: str = ""
+
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 def get_settings() -> Settings:
