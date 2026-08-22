@@ -4,7 +4,7 @@
 FROM python:3.12-slim AS builder
 
 # GFW workaround: debian CDN unstable from this network; use TUNA mirror
-RUN sed -i "s|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
+RUN sed -i "s|deb.debian.org|mirrors.ustc.edu.cn|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
 RUN apt-get update && apt-get install -y --no-install-recommends     build-essential cmake gfortran git pkg-config wget     && rm -rf /var/lib/apt/lists/*
 
 # Build kim-api from source
@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir .
 FROM python:3.12-slim AS runtime
 
 # GFW workaround: TUNA mirror for apt
-RUN sed -i "s|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
+RUN sed -i "s|deb.debian.org|mirrors.ustc.edu.cn|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
 RUN apt-get update && apt-get install -y --no-install-recommends     redis-tools     && rm -rf /var/lib/apt/lists/*
 
 # Copy kim-api from builder
