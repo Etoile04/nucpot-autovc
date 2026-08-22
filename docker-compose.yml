@@ -8,12 +8,10 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
     - |
-      if [ -f /app/bin/lmp-full ] && [ ! -e /usr/local/bin/lmp_serial ]; then
-        ln -sf /app/bin/lmp-full /usr/local/bin/lmp_serial
-        echo "[bootstrap] Created lmp_serial -> lmp-full"
+      # LAMMPS now baked into the image (Debian arm64 lammps w/ MANYBODY).
+      if [ ! -e /usr/local/bin/lmp_serial ] && [ -x /usr/bin/lmp ]; then
+        ln -sf /usr/bin/lmp /usr/local/bin/lmp_serial
       fi
-      DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null
-      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends libgomp1 libomp5 libopenmpi40 2>/dev/null || true
       mkdir -p /app/uploads
       mkdir -p /opt/deepmd/lib
       exec python -m uvicorn autovc.main:create_app --host 0.0.0.0 --port 8000 --factory
@@ -54,12 +52,10 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
     - |
-      if [ -f /app/bin/lmp-full ] && [ ! -e /usr/local/bin/lmp_serial ]; then
-        ln -sf /app/bin/lmp-full /usr/local/bin/lmp_serial
-        echo "[bootstrap] Created lmp_serial -> lmp-full"
+      # LAMMPS now baked into the image (Debian arm64 lammps w/ MANYBODY).
+      if [ ! -e /usr/local/bin/lmp_serial ] && [ -x /usr/bin/lmp ]; then
+        ln -sf /usr/bin/lmp /usr/local/bin/lmp_serial
       fi
-      DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null
-      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends libgomp1 libomp5 libopenmpi40 2>/dev/null || true
       mkdir -p /app/uploads
       mkdir -p /opt/deepmd/lib
       exec python -m celery -A autovc.workers.celery_app worker --loglevel=info --concurrency=2

@@ -44,12 +44,14 @@ RUN kim-api-collections-management install user EAM_Dynamo_ZhouJW_2004_U__MO_149
 RUN kim-api-collections-management install user EAM_Dynamo_ZhouJW_2004_U_Mo__MO_681318545861_001 || true
 RUN kim-api-collections-management install user EAM_Dynamo_Mendelev_2007_Zr__MO_895293190254_001 || true
 
-# x86-64 LAMMPS binary (bin/lmp-full) runs under Docker Desktop's qemu-user
-# emulation; it needs amd64 glibc/loader/libgfortran present in the image.
-RUN dpkg --add-architecture amd64 && apt-get update &&     apt-get install -y --no-install-recommends         libc6:amd64 libstdc++6:amd64 libgomp1:amd64 libgfortran5:amd64     && rm -rf /var/lib/apt/lists/*
+# LAMMPS: use Debian's arm64-native lammps (MANYBODY et al. included) instead
+# of the vendored x86-64 bin/lmp-full which lacks MANYBODY (eam/fs) and needs
+# qemu emulation + amd64 multilib. apt lammps 2025.02 covers all pair styles
+# the verification templates use.
+RUN apt-get update && apt-get install -y --no-install-recommends         lammps lammps-data     && rm -rf /var/lib/apt/lists/*
 
 # Create lmp_serial symlink at build time
-RUN if [ -f /app/bin/lmp-full ]; then         ln -sf /app/bin/lmp-full /usr/local/bin/lmp_serial;     fi
+RUN ln -sf /usr/bin/lmp /usr/local/bin/lmp_serial
 
 # Ensure uploads dir exists
 RUN mkdir -p /app/uploads
