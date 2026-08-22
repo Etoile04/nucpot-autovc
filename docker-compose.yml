@@ -20,12 +20,12 @@ services:
     ports:
     - 8002:8000
     environment:
-    - HTTP_PROXY=
-    - HTTPS_PROXY=
-    - http_proxy=
-    - https_proxy=
-    - NO_PROXY=
-    - no_proxy=
+    - HTTP_PROXY=http://host.docker.internal:7892
+    - HTTPS_PROXY=http://host.docker.internal:7892
+    - http_proxy=http://host.docker.internal:7892
+    - https_proxy=http://host.docker.internal:7892
+    - NO_PROXY=localhost,127.0.0.1,redis,host.docker.internal
+    - no_proxy=localhost,127.0.0.1,redis,host.docker.internal
     - LD_LIBRARY_PATH=/opt/deepmd/lib
     - LAMMPS_BIN=/usr/local/bin/lmp_serial
     - REDIS_URL=redis://redis:6379/0
@@ -64,12 +64,12 @@ services:
       mkdir -p /opt/deepmd/lib
       exec python -m celery -A autovc.workers.celery_app worker --loglevel=info --concurrency=2
     environment:
-    - HTTP_PROXY=
-    - HTTPS_PROXY=
-    - http_proxy=
-    - https_proxy=
-    - NO_PROXY=
-    - no_proxy=
+    - HTTP_PROXY=http://host.docker.internal:7892
+    - HTTPS_PROXY=http://host.docker.internal:7892
+    - http_proxy=http://host.docker.internal:7892
+    - https_proxy=http://host.docker.internal:7892
+    - NO_PROXY=localhost,127.0.0.1,redis,host.docker.internal
+    - no_proxy=localhost,127.0.0.1,redis,host.docker.internal
     - LD_LIBRARY_PATH=/opt/deepmd/lib
     - LAMMPS_BIN=/usr/local/bin/lmp_serial
     - REDIS_URL=redis://redis:6379/0
