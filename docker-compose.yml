@@ -25,6 +25,10 @@ services:
     - NO_PROXY=
     - no_proxy=
     - LD_LIBRARY_PATH=/opt/deepmd/lib
+    - LAMMPS_BIN=/usr/local/bin/lmp_serial
+    - REDIS_URL=redis://redis:6379/0
+    - CELERY_BROKER_URL=redis://redis:6379/0
+    - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
     - autovc-data:/app/data
     - autovc-uploads:/app/uploads
@@ -62,6 +66,11 @@ services:
     - https_proxy=
     - NO_PROXY=
     - no_proxy=
+    - LD_LIBRARY_PATH=/opt/deepmd/lib
+    - LAMMPS_BIN=/usr/local/bin/lmp_serial
+    - REDIS_URL=redis://redis:6379/0
+    - CELERY_BROKER_URL=redis://redis:6379/0
+    - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
     - autovc-data:/app/data
     - autovc-uploads:/app/uploads
@@ -88,5 +97,5 @@ volumes:
   redis-data: null
 networks:
   default:
-    name: nucpot_default
+    name: nucpot-prod_prod
     external: true
