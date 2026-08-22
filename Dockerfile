@@ -32,7 +32,7 @@ COPY --from=builder /usr/local/lib/libkim-api* /usr/local/lib/
 COPY --from=builder /usr/local/lib/pkgconfig/ /usr/local/lib/pkgconfig/
 COPY --from=builder /usr/local/include/kim-api/ /usr/local/include/kim-api/
 COPY --from=builder /usr/local/share/cmake/kim-api/ /usr/local/lib/cmake/kim-api/
-COPY --from=builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
+COPY --from=builder /usr/local/lib/python3.12/site-packages/ /usr/local/lib/python3.12/site-packages/
 RUN ldconfig
 
 WORKDIR /app
