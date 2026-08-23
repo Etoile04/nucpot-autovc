@@ -122,6 +122,26 @@ async def get_verification(verification_id: str) -> dict | None:
     data = resp.json()
     return data[0] if data else None
 
+
+async def list_verifications(limit: int = 50, offset: int = 0) -> list[dict]:
+    """List verification records, newest first.
+
+    Used by GET /api/verifications for the admin history panel. Read-only and
+    paginated; order on created_at desc so the panel shows latest runs first.
+    """
+    resp = await _request_with_retry(
+        "GET",
+        f"{SUPABASE_URL}/rest/v1/verifications",
+        params={
+            "select": "*",
+            "order": "created_at.desc",
+            "limit": str(limit),
+            "offset": str(offset),
+        },
+        headers=_headers(),
+    )
+    return resp.json()
+
 async def update_potential(potential_id: str, updates: dict) -> dict:
     """Update potential record in Supabase."""
     resp = await _request_with_retry(

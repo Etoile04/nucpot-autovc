@@ -512,7 +512,7 @@ def _generate_pdf(jid, potential_name, overall, property_scores, grades, complet
 import asyncio
 from pydantic import BaseModel, Field
 # fpdf imported lazily in _generate_pdf
-from autovc.supabase_client import get_potential, create_verification, update_verification, update_potential, get_verification as get_supabase_verification
+from autovc.supabase_client import get_potential, create_verification, update_verification, update_potential, get_verification as get_supabase_verification, list_verifications
 
 
 class SupabaseVerifyRequest(BaseModel):
@@ -660,6 +660,34 @@ async def get_supabase_verify_status(job_id: str):
         "error_message": record.get("error_message"),
         "template": record.get("template"),
         "created_at": record.get("created_at"),
+    }
+
+
+@router.get("/verifications")
+async def list_supabase_verifications(
+    limit: int = 50,
+    offset: int = 0,
+    auth=Depends(require_auth),
+):
+    """List verification records (newest first) for the admin history panel.
+
+    Read-only listing over the Supabase verifications table; each row carries
+    the same shape as GET /api/verify/{job_id} plus potential_id, so the web
+    admin panel can restore its history across page reloads.
+    """
+    if limit < 1 or limit > 200:
+        raise HTTPException(400, "limit must be in [1, 200]")
+    if offset < 0:
+        raise HTTPException(400, "offset must be >= 0")
+    try:
+        rows = await list_verifications(limit=limit, offset=offset)
+    except Exception as e:
+        raise HTTPException(500, f"Supabase error: {e}")
+    return {
+        "count": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "items": rows,
     }
 
 
