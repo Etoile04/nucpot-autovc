@@ -88,60 +88,6 @@ async def get_potential(potential_id: str) -> dict:
     return data[0]
 
 
-async def create_verification(record: dict) -> dict:
-    """Insert verification record into Supabase."""
-    resp = await _request_with_retry(
-        "POST",
-        f"{SUPABASE_URL}/rest/v1/verifications",
-        json=record,
-        headers={**_headers(), "Prefer": "return=representation"},
-    )
-    return resp.json()[0]
-
-
-async def update_verification(verification_id: str, updates: dict) -> dict:
-    """Update verification record in Supabase."""
-    resp = await _request_with_retry(
-        "PATCH",
-        f"{SUPABASE_URL}/rest/v1/verifications",
-        params={"id": f"eq.{verification_id}"},
-        json=updates,
-        headers={**_headers(), "Prefer": "return=representation"},
-    )
-    return resp.json()
-
-
-async def get_verification(verification_id: str) -> dict | None:
-    """Fetch a verification record from Supabase."""
-    resp = await _request_with_retry(
-        "GET",
-        f"{SUPABASE_URL}/rest/v1/verifications",
-        params={"id": f"eq.{verification_id}", "select": "*"},
-        headers=_headers(),
-    )
-    data = resp.json()
-    return data[0] if data else None
-
-
-async def list_verifications(limit: int = 50, offset: int = 0) -> list[dict]:
-    """List verification records, newest first.
-
-    Used by GET /api/verifications for the admin history panel. Read-only and
-    paginated; order on created_at desc so the panel shows latest runs first.
-    """
-    resp = await _request_with_retry(
-        "GET",
-        f"{SUPABASE_URL}/rest/v1/verifications",
-        params={
-            "select": "*",
-            "order": "created_at.desc",
-            "limit": str(limit),
-            "offset": str(offset),
-        },
-        headers=_headers(),
-    )
-    return resp.json()
-
 async def update_potential(potential_id: str, updates: dict) -> dict:
     """Update potential record in Supabase."""
     resp = await _request_with_retry(
@@ -152,3 +98,171 @@ async def update_potential(potential_id: str, updates: dict) -> dict:
         headers={**_headers(), "Prefer": "return=representation"},
     )
     return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# B-B phase: verification history stored in FastAPI local PG (verification_tasks).
+# AutoVC schema details (template, progress, current_step, results, etc.)
+# are packed into rating_metrics jsonb; potential_function column holds potential_id.
+# Potential management still goes to Supabase.
+# ---------------------------------------------------------------------------
+import json as _json
+
+_LOCAL_PG_DSN = os.environ.get(
+    "LOCAL_PG_DSN",
+    "postgresql://nfm:local_dev_only_change_me@nucpot-prod-db:5432/nfm_db",
+)
+
+
+def _local_conn():
+    """Context manager yielding a psycopg2 connection.
+
+    psycopg2's native ``with conn:`` only wraps a transaction and does NOT
+    close the connection — naive use leaks one fd per call. This wrapper
+    commits on success, rolls back on error, and always closes.
+    """
+    import psycopg2
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _cm():
+        conn = psycopg2.connect(_LOCAL_PG_DSN)
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+    return _cm()
+
+
+_STATUS_MAP = {"pending": "queued"}  # autovc → DB enum
+
+
+def _map_status_in(s: str) -> str:
+    return _STATUS_MAP.get(s, s)
+
+
+def _map_status_out(s: str) -> str:
+    # DB 'queued' means 'pending' to autovc callers
+    return "pending" if s == "queued" else s
+
+
+def _row_to_record(row) -> dict:
+    """Row layout (13 cols):
+        0 id, 1 composition, 2 potential_function, 3 temperature_min,
+        4 temperature_max, 5 timestep_count, 6 status, 7 rating,
+        8 rating_summary, 9 rating_metrics, 10 error_message, 11 created_at,
+        12 updated_at
+    """
+    extras = row[9] or {}
+    if isinstance(extras, str):
+        extras = _json.loads(extras)
+    return {
+        "id": str(row[0]),
+        "potential_id": row[2],
+        "template": extras.get("template"),
+        "status": _map_status_out(row[6]),
+        "progress": extras.get("progress", 0.0),
+        "current_step": extras.get("current_step"),
+        "triggered_by": extras.get("triggered_by"),
+        "results": extras.get("results", []),
+        "overall_grade": row[7],
+        "error_log": row[10],
+        "created_at": row[11].isoformat() if row[11] else None,
+        "updated_at": row[12].isoformat() if row[12] else None,
+    }
+
+
+async def create_verification(record: dict) -> dict:
+    """Insert verification row into local verification_tasks."""
+    composition = _json.dumps({"_note": "autovc-record-no-composition"})
+    rating_metrics = _json.dumps({
+        "template": record.get("template"),
+        "progress": record.get("progress", 0.0),
+        "current_step": record.get("current_step"),
+        "triggered_by": record.get("triggered_by"),
+        "results": record.get("results", []),
+    })
+    with _local_conn() as c:
+        with c.cursor() as cur:
+            cur.execute(
+                """INSERT INTO verification_tasks
+                  (id, composition, potential_function, temperature_min, temperature_max,
+                   timestep_count, status, rating, rating_summary, rating_metrics, error_message)
+                  VALUES (%s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+                  RETURNING id""",
+                (record["id"], composition, record["potential_id"],
+                 0.0, 1000.0, 100, _map_status_in(record.get("status", "queued")),
+                 record.get("overall_grade"), None, rating_metrics,
+                 record.get("error_log"))
+            )
+            new_id = cur.fetchone()[0]
+            c.commit()
+    record["id"] = str(new_id)
+    return record
+
+
+async def update_verification(verification_id: str, updates: dict) -> dict:
+    """Partial-update. Known cols mapped to dedicated columns; the rest packed into rating_metrics."""
+    set_parts = []
+    values = []
+    if "status" in updates:
+        set_parts.append("status = %s")
+        values.append(_map_status_in(updates["status"]))
+    if "overall_grade" in updates:
+        set_parts.append("rating = %s")
+        values.append(updates["overall_grade"])
+    if "error_log" in updates:
+        set_parts.append("error_message = %s")
+        values.append(updates["error_log"])
+    with _local_conn() as c:
+        with c.cursor() as cur:
+            cur.execute("SELECT rating_metrics FROM verification_tasks WHERE id=%s",
+                        (verification_id,))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError(f"verification {verification_id} not found")
+            extras = row[0] or {}
+            if isinstance(extras, str):
+                extras = _json.loads(extras)
+            for k in ("current_step", "progress", "results"):
+                if k in updates:
+                    extras[k] = updates[k]
+            set_parts.append("rating_metrics = %s::jsonb")
+            values.append(_json.dumps(extras))
+            set_parts.append("updated_at = NOW()")
+            values.append(verification_id)
+            sql = f"UPDATE verification_tasks SET {', '.join(set_parts)} WHERE id = %s RETURNING id"
+            cur.execute(sql, values)
+            c.commit()
+    return {"id": verification_id, **updates}
+
+
+async def get_verification(verification_id: str):
+    with _local_conn() as c:
+        with c.cursor() as cur:
+            cur.execute(
+                """SELECT id, composition, potential_function, temperature_min,
+                  temperature_max, timestep_count, status, rating, rating_summary,
+                  rating_metrics, error_message, created_at, updated_at
+                  FROM verification_tasks WHERE id=%s""",
+                (verification_id,))
+            row = cur.fetchone()
+    if not row:
+        return None
+    return _row_to_record(row)
+
+
+async def list_verifications(limit: int = 50, offset: int = 0):
+    out = []
+    with _local_conn() as c:
+        with c.cursor() as cur:
+            cur.execute(
+                """SELECT id, composition, potential_function, temperature_min,
+                  temperature_max, timestep_count, status, rating, rating_summary,
+                  rating_metrics, error_message, created_at, updated_at
+                  FROM verification_tasks ORDER BY created_at DESC LIMIT %s OFFSET %s""",
+                (limit, offset))
+            for row in cur.fetchall():
+                out.append(_row_to_record(row))
+    return out
