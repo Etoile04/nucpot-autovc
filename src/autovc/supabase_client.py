@@ -72,32 +72,70 @@ async def _request_with_retry(method: str, url: str, **kwargs) -> httpx.Response
 
 
 async def get_potential(potential_id: str) -> dict:
-    """Fetch potential metadata from Supabase by UUID."""
-    resp = await _request_with_retry(
-        "GET",
-        f"{SUPABASE_URL}/rest/v1/potentials",
-        params={
-            "id": f"eq.{potential_id}",
-            "select": "id,name,subtype,format,elements,lammps_config,file_url",
-        },
-        headers=_headers(),
-    )
-    data = resp.json()
-    if not data:
-        raise ValueError(f"Potential {potential_id} not found in Supabase")
-    return data[0]
+    """Fetch potential metadata from the local nfm_db (A2 phase 2, NFM-3801).
+
+    The 65 cloud rows were ETL'd into local potentials on 2026-08-29; reads now
+    go to nucpot-prod-db so autovc has zero cloud dependency for lookups.
+    """
+    with _local_conn() as c:
+        with c.cursor() as cur:
+            cur.execute(
+                """SELECT id, name, subtype, format, elements, lammps_config, file_url
+                   FROM potentials WHERE id = %s""",
+                (potential_id,))
+            row = cur.fetchone()
+    if not row:
+        raise ValueError(f"Potential {potential_id} not found in local nfm_db")
+    def _as_json(v):
+        return _json.loads(v) if isinstance(v, str) and v else v
+    return {
+        "id": str(row[0]),
+        "name": row[1],
+        "subtype": row[2],
+        "format": row[3],
+        "elements": _as_json(row[4]),
+        "lammps_config": _as_json(row[5]),
+        "file_url": row[6],
+    }
 
 
 async def update_potential(potential_id: str, updates: dict) -> dict:
-    """Update potential record in Supabase."""
-    resp = await _request_with_retry(
-        "PATCH",
-        f"{SUPABASE_URL}/rest/v1/potentials",
-        params={"id": f"eq.{potential_id}"},
-        json=updates,
-        headers={**_headers(), "Prefer": "return=representation"},
-    )
-    return resp.json()
+    """Partial-update potential in local nfm_db (A2 phase 2).
+
+    Only known mutable columns are accepted; anything else is packed into
+    the extra jsonb bag so no caller data is silently dropped.
+    """
+    col_map = {"name": "name", "display_name": "display_name", "subtype": "subtype",
+               "format": "format", "lammps_config": "lammps_config",
+               "file_url": "file_url", "status": "status", "file_hash": "file_hash"}
+    set_parts, values = [], []
+    with _local_conn() as c:
+        with c.cursor() as cur:
+            extras_row = None
+            for k, v in updates.items():
+                if k in col_map:
+                    set_parts.append(f"{col_map[k]} = %s")
+                    values.append(_json.dumps(v) if isinstance(v, (dict, list)) else v)
+            if set_parts:
+                # merge caller's non-column keys into extra
+                rest = {k: v for k, v in updates.items() if k not in col_map}
+                if rest:
+                    cur.execute("SELECT extra FROM potentials WHERE id=%s", (potential_id,))
+                    r = cur.fetchone()
+                    if not r:
+                        raise ValueError(f"potential {potential_id} not found in local nfm_db")
+                    extras_row = r[0] or {}
+                    if isinstance(extras_row, str):
+                        extras_row = _json.loads(extras_row)
+                    extras_row.update(rest)
+                    set_parts.append("extra = %s::jsonb")
+                    values.append(_json.dumps(extras_row))
+                set_parts.append("updated_at = NOW()")
+                values.append(potential_id)
+                sql = f"UPDATE potentials SET {', '.join(set_parts)} WHERE id = %s RETURNING id"
+                cur.execute(sql, values)
+                c.commit()
+    return {"id": potential_id, **updates}
 
 
 # ---------------------------------------------------------------------------
