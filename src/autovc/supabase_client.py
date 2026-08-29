@@ -115,12 +115,24 @@ _LOCAL_PG_DSN = os.environ.get(
 
 
 def _local_conn():
-    """Open a sync psycopg2 connection to local PG.
+    """Context manager yielding a psycopg2 connection.
 
-    Lazy import keeps supabase-only deployments working.
+    psycopg2's native ``with conn:`` only wraps a transaction and does NOT
+    close the connection — naive use leaks one fd per call. This wrapper
+    commits on success, rolls back on error, and always closes.
     """
     import psycopg2
-    return psycopg2.connect(_LOCAL_PG_DSN)
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _cm():
+        conn = psycopg2.connect(_LOCAL_PG_DSN)
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+    return _cm()
 
 
 _STATUS_MAP = {"pending": "queued"}  # autovc → DB enum
