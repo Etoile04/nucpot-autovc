@@ -23,23 +23,42 @@ from autovc.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-# ── Reference value lookup via PG ─────────────────────────────────
+# ── Reference value lookup (NFM-3873 / BUG-20 fix) ───────────────
+# The legacy ``_get_ref_value`` silently substituted a hardcoded
+# ``lattice_guess`` (default 3.4 Å) for ``lattice_constant`` when PG /
+# _FALLBACK had no entry. Callers grading results then computed grades
+# against an *optimization initial guess* — producing the W-Ta
+# "reference=3.4, grade=C" misfire documented in BUG-20.
+#
+# Use :func:`autovc.runners.reference_lookup.lookup_reference` for the
+# grading path (it returns REFERENCE_MISSING when no real reference is
+# available, never a fallback masquerading as one) and
+# :func:`get_initial_lattice_guess` for the LAMMPS initial-guess path.
+from autovc.runners.reference_lookup import (  # noqa: F401 — re-exported
+    LATTICE_GUESS,
+    ReferenceFlag,
+    ReferenceLookup,
+    get_initial_lattice_guess,
+    lookup_reference,
+)
+
+
 def _get_ref_value(material: str, structure: str, prop: str) -> float | None:
-    """Look up reference value from PG (with fallback)."""
-    try:
-        from autovc.reference.data import get_reference_value
-        result = get_reference_value(material, structure, prop)
-        if result and result.get("value") is not None:
-            return float(result["value"])
-    except Exception as e:
-        logger.debug(f"PG ref lookup failed for {material}/{structure}/{prop}: {e}")
-    # Minimal fallback for initial lattice guess
-    _GUESS: dict[str, float] = {
-        "U": 2.85, "Mo": 3.15, "Zr": 3.61,
-        "U-Mo": 3.40, "U-Zr": 3.45,
-    }
-    if prop == "lattice_constant":
-        return _GUESS.get(material, 3.4)
+    """Backwards-compatible shim around :func:`lookup_reference`.
+
+    Returns ``value`` when the lookup is a real reference (``REFERENCE_OK``),
+    ``None`` for both ``REFERENCE_MISSING`` and ``DEV_FALLBACK``. Callers
+    that grade on this value MUST follow up with the
+    :attr:`ReferenceLookup.is_real_reference` guard (preferred: use
+    :func:`lookup_reference` directly so the flag is preserved).
+
+    The previous behaviour — silently substituting a lattice_guess for a
+    missing reference — was the BUG-20 root cause and is intentionally
+    no longer reachable through this function.
+    """
+    result = lookup_reference(material, structure, prop)
+    if result.is_real_reference:
+        return result.value
     return None
 
 # Grading thresholds: A < 2%, B < 5%, C < 10%, D < 20%, F >= 20%
@@ -787,11 +806,15 @@ class LAMMPSRunner:
         pair_style, pair_coeff = self._get_pair_config(pot_file)
         all_elements = " ".join(self.elements) if self.elements else "U"
         element = self.elements[0] if self.elements else "U"
-        guess = 3.4
-        # Check reference for a better guess
-        ref_lc = _get_ref_value(element, self.structure, "lattice_constant")
-        if ref_lc is not None:
-            guess = ref_lc
+        # BUG-20 fix (NFM-3873): the initial guess for LAMMPS minimization is
+        # a *separate* concern from grading. ``get_initial_lattice_guess`` is
+        # allowed to fall back to the LATTICE_GUESS table (or its 3.4 Å
+        # default) when PG / _FALLBACK have no entry — that's fine, it's just
+        # a starting point for relaxation. The grading path below uses
+        # ``_get_ref_value`` (which is now strict: only REFERENCE_OK returns
+        # a value; DEV_FALLBACK and MISSING both return None), so a guess
+        # masquerading as a reference can no longer pollute grades.
+        guess = get_initial_lattice_guess(element, self.structure)
 
         if prop_name in ("lattice_constant", "cohesive_energy"):
             script = _generate_lattice_input(
@@ -802,17 +825,25 @@ class LAMMPSRunner:
             results = {}
             if "lattice_constant" in parsed:
                 v = parsed["lattice_constant"]
-                ref_v = _get_ref_value(element, self.structure, "lattice_constant")
+                ref = lookup_reference(element, self.structure, "lattice_constant")
+                # Only grade against a *real* reference. A dev fallback or
+                # miss must propagate as reference: null + flag + grade: None
+                # so callers can render "reference_missing" instead of a
+                # misleading letter grade (BUG-20 / NFM-3873).
+                ref_v = ref.value if ref.is_real_reference else None
                 g = _grade_property(v, ref_v)
                 results["lattice_constant"] = {
-                    "value": v, "unit": "angstrom", "reference": ref_v, **g,
+                    "value": v, "unit": "angstrom",
+                    "reference": ref_v, "reference_flag": ref.flag.value, **g,
                 }
             if "cohesive_energy" in parsed:
                 v = parsed["cohesive_energy"]
-                ref_v = _get_ref_value(element, self.structure, "cohesive_energy")
+                ref = lookup_reference(element, self.structure, "cohesive_energy")
+                ref_v = ref.value if ref.is_real_reference else None
                 g = _grade_property(v, ref_v)
                 results["cohesive_energy"] = {
-                    "value": v, "unit": "eV/atom", "reference": ref_v, **g,
+                    "value": v, "unit": "eV/atom",
+                    "reference": ref_v, "reference_flag": ref.flag.value, **g,
                 }
             if progress_callback and prop_name == "lattice_constant" and "lattice_constant" in results:
                 await progress_callback(0.2, "lattice_constant done")
@@ -856,9 +887,12 @@ class LAMMPSRunner:
             Em_shear = await _run_strain(shear_xy=-eps)
             C44 = (Ep_shear - 2*E0 + Em_shear) / (eps**2 * vol) * conv
 
-            ref_c11 = _get_ref_value(element, self.structure, "C11")
-            ref_c12 = _get_ref_value(element, self.structure, "C12")
-            ref_c44 = _get_ref_value(element, self.structure, "C44")
+            ref_c11_lookup = lookup_reference(element, self.structure, "C11")
+            ref_c12_lookup = lookup_reference(element, self.structure, "C12")
+            ref_c44_lookup = lookup_reference(element, self.structure, "C44")
+            ref_c11 = ref_c11_lookup.value if ref_c11_lookup.is_real_reference else None
+            ref_c12 = ref_c12_lookup.value if ref_c12_lookup.is_real_reference else None
+            ref_c44 = ref_c44_lookup.value if ref_c44_lookup.is_real_reference else None
 
             result = {
                 "value": {"C11": round(C11, 2), "C12": round(C12, 2), "C44": round(C44, 2)},
@@ -869,6 +903,11 @@ class LAMMPSRunner:
                     "C44": _grade_property(C44, ref_c44),
                 },
                 "reference": {"C11": ref_c11, "C12": ref_c12, "C44": ref_c44},
+                "reference_flags": {
+                    "C11": ref_c11_lookup.flag.value,
+                    "C12": ref_c12_lookup.flag.value,
+                    "C44": ref_c44_lookup.flag.value,
+                },
             }
             if progress_callback:
                 await progress_callback(0.7, "elastic_constants done")
@@ -895,9 +934,13 @@ class LAMMPSRunner:
             output = await self._run_lammps(script)
             parsed = _parse_lammps_output(output)
             evf = parsed.get("vacancy_formation_energy")
-            ref_evf = _get_ref_value(element, self.structure, "vacancy_formation_energy")
+            ref_evf_lookup = lookup_reference(element, self.structure, "vacancy_formation_energy")
+            ref_evf = ref_evf_lookup.value if ref_evf_lookup.is_real_reference else None
             g = _grade_property(evf, ref_evf) if evf is not None else {"grade": None, "absolute_error": None, "relative_error": None}
-            result = {"value": evf, "unit": "eV", "reference": ref_evf, **g}
+            result = {
+                "value": evf, "unit": "eV",
+                "reference": ref_evf, "reference_flag": ref_evf_lookup.flag.value, **g,
+            }
             if progress_callback:
                 await progress_callback(1.0, "vacancy_formation_energy done")
             return result
@@ -920,9 +963,16 @@ class LAMMPSRunner:
                 gamma_jm2 = gamma_ev * 16.0218
             else:
                 gamma_jm2 = None
-            ref_se = _get_ref_value(element, self.structure, "surface_energy")
+            ref_se_lookup = lookup_reference(element, self.structure, "surface_energy")
+            ref_se = ref_se_lookup.value if ref_se_lookup.is_real_reference else None
             g = _grade_property(gamma_jm2, ref_se) if gamma_jm2 is not None else {"grade": None}
-            result = {"value": round(gamma_jm2, 4) if gamma_jm2 else None, "unit": "J/m²", "reference": ref_se, **g}
+            result = {
+                "value": round(gamma_jm2, 4) if gamma_jm2 else None,
+                "unit": "J/m²",
+                "reference": ref_se,
+                "reference_flag": ref_se_lookup.flag.value,
+                **g,
+            }
             if progress_callback:
                 await progress_callback(1.0, "surface_energy done")
             return result
