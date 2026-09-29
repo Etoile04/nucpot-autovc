@@ -208,16 +208,24 @@ Environment variables (set in `.env` or Docker environment):
 ### Docker Compose
 
 ```bash
-docker-compose up -d
+docker-compose up -d --remove-orphans
 ```
 
 This starts three services:
 
 - **`api`** — FastAPI on port 8002 (mapped to host 8002)
 - **`worker`** — Celery worker with LAMMPS
-- **`redis`** — Message broker
+- **`autovc-redis`** — Message broker (deliberately not `redis`: the stack shares the external prod network, where `redis` already resolves to nucpot-prod's broker — see NFM-5272)
 
-The API joins the external `nucpot_default` Docker network to access the nucpot PostgreSQL database.
+The stack joins the external `nucpot-prod_prod` Docker network to access the nucpot PostgreSQL database; service names are kept unique against prod's to avoid DNS alias collisions.
+
+**Migrating from the old `redis` service name (NFM-5272):** the first redeploy after the rename must remove the orphaned `<project>-redis-1` container — `docker-compose up -d --remove-orphans` handles this. Until it is removed, that container keeps answering for the `redis` DNS alias on `nucpot-prod_prod`, so both stacks keep hitting the wrong broker. To migrate manually instead:
+
+```bash
+docker rm -f <project>-redis-1   # find the exact name via: docker ps -a --filter name=redis
+```
+
+Redis data survives the rename: the service still mounts the same `redis-data` volume.
 
 ### Production (Systemd)
 

@@ -67,9 +67,11 @@ RUN mkdir -p /app/uploads
 EXPOSE 8000
 
 ENV DATABASE_URL=sqlite:///./autovc.db
-ENV REDIS_URL=redis://redis:6379/0
-ENV CELERY_BROKER_URL=redis://redis:6379/0
-ENV CELERY_RESULT_BACKEND=redis://redis:6379/0
+# `autovc-redis` = the docker-compose service name — unique on the shared prod
+# network, where a bare `redis` host collides with nucpot-prod's DNS alias (NFM-5272)
+ENV REDIS_URL=redis://autovc-redis:6379/0
+ENV CELERY_BROKER_URL=redis://autovc-redis:6379/0
+ENV CELERY_RESULT_BACKEND=redis://autovc-redis:6379/0
 
 ENTRYPOINT ["/bin/sh", "-c"]
 CMD ["python", "-m", "uvicorn", "autovc.main:create_app", "--host", "0.0.0.0", "--port", "8000", "--factory"]

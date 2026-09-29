@@ -22,13 +22,13 @@ services:
     - HTTPS_PROXY=http://host.docker.internal:7897
     - http_proxy=http://host.docker.internal:7897
     - https_proxy=http://host.docker.internal:7897
-    - NO_PROXY=localhost,127.0.0.1,redis,host.docker.internal
-    - no_proxy=localhost,127.0.0.1,redis,host.docker.internal
+    - NO_PROXY=localhost,127.0.0.1,autovc-redis,host.docker.internal
+    - no_proxy=localhost,127.0.0.1,autovc-redis,host.docker.internal
     - LD_LIBRARY_PATH=/opt/deepmd/lib
     - LAMMPS_BIN=/usr/local/bin/lmp_serial
-    - REDIS_URL=redis://redis:6379/0
-    - CELERY_BROKER_URL=redis://redis:6379/0
-    - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    - REDIS_URL=redis://autovc-redis:6379/0
+    - CELERY_BROKER_URL=redis://autovc-redis:6379/0
+    - CELERY_RESULT_BACKEND=redis://autovc-redis:6379/0
     volumes:
     - autovc-data:/app/data
     - autovc-uploads:/app/uploads
@@ -42,7 +42,7 @@ services:
       source: ./deepmd-plugin
       target: /opt/deepmd/lib
     depends_on:
-    - redis
+    - autovc-redis
     restart: unless-stopped
   worker:
     build:
@@ -64,13 +64,13 @@ services:
     - HTTPS_PROXY=http://host.docker.internal:7897
     - http_proxy=http://host.docker.internal:7897
     - https_proxy=http://host.docker.internal:7897
-    - NO_PROXY=localhost,127.0.0.1,redis,host.docker.internal
-    - no_proxy=localhost,127.0.0.1,redis,host.docker.internal
+    - NO_PROXY=localhost,127.0.0.1,autovc-redis,host.docker.internal
+    - no_proxy=localhost,127.0.0.1,autovc-redis,host.docker.internal
     - LD_LIBRARY_PATH=/opt/deepmd/lib
     - LAMMPS_BIN=/usr/local/bin/lmp_serial
-    - REDIS_URL=redis://redis:6379/0
-    - CELERY_BROKER_URL=redis://redis:6379/0
-    - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    - REDIS_URL=redis://autovc-redis:6379/0
+    - CELERY_BROKER_URL=redis://autovc-redis:6379/0
+    - CELERY_RESULT_BACKEND=redis://autovc-redis:6379/0
     volumes:
     - autovc-data:/app/data
     - autovc-uploads:/app/uploads
@@ -84,9 +84,15 @@ services:
       source: ./deepmd-plugin
       target: /opt/deepmd/lib
     depends_on:
-    - redis
+    - autovc-redis
     restart: unless-stopped
-  redis:
+  # Unique service name — do NOT shorten to `redis`: the default network below
+  # is the EXTERNAL prod network, where nucpot-prod-redis already owns the
+  # `redis` DNS alias. A second `redis` alias made `redis` resolve to two IPs,
+  # so celery clients in both stacks randomly pinned to the wrong broker and
+  # silently dropped tasks (NFM-5272). Volume name kept (`redis-data`) so
+  # persisted data survives the rename.
+  autovc-redis:
     image: redis:7-alpine
     volumes:
     - redis-data:/data
@@ -97,5 +103,7 @@ volumes:
   redis-data: null
 networks:
   default:
+    # External prod network — service names here share DNS with the nucpot-prod
+    # stack, so every service name must be unique vs. prod's (see autovc-redis).
     name: nucpot-prod_prod
     external: true
