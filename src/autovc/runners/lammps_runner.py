@@ -135,7 +135,12 @@ def _generate_lattice_input(
         lattice_line = f"lattice {lammps_struct} {guess_a}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
-    plugin_load = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.son" if is_dp else ""
+    # NFM-5281: .so (staged file), with a trailing newline — the template
+    # fuses {plugin_load}{pair_style} on one line, so without the newline
+    # the two LAMMPS commands concatenate into a syntax error.
+    plugin_load = (
+        "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.so\n" if is_dp else ""
+    )
     n_types = len(elements)
     MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
               "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
@@ -302,7 +307,12 @@ def _generate_elastic_input(
         lattice_line = f"lattice {lammps_struct} {guess_a}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
-        plugin_load = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.son" if is_dp else ""
+    # NFM-5281: .so (staged file); hoisted out of the non-hcp branch so
+    # hcp + DP does not silently skip plugin loading; trailing newline
+    # because the template fuses {plugin_load}{pair_style} on one line.
+    plugin_load = (
+        "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.so\n" if is_dp else ""
+    )
 
     MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
               "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
@@ -339,7 +349,7 @@ atom_style atomic
 region box block 0 {size} 0 {size} 0 {size}
 {box_block}
 
-{pair_style}
+{plugin_load}{pair_style}
 {pair_coeff}
 
 # First minimize to get reference
@@ -563,12 +573,15 @@ class LAMMPSRunner:
         is_meam = "meam" in ptype_init
         is_mtp = "mtp" in ptype_init
         if is_dp:
-            raise ValueError(
-                "DeepMD/DP potentials are not supported in this deployment. "
-                "Requires LAMMPS with plugin command (2023+) + TensorFlow/PyTorch runtime (~2GB). "
-                "Only 2 affected potentials: TaNbWMoV_DP, FeHHe-DP."
+            # NFM-5281: re-enabled. The deepmd-plugin bind source is
+            # repopulated and in-container verified (deepmd-plugin/MANIFEST.md,
+            # 2026-10-03: deepmd-kit 3.2.0 + TF 2.18.1 + torch 2.10.0,
+            # linux/aarch64). lmp-with-dp wraps the host lmp with
+            # LD_LIBRARY_PATH=/opt/deepmd/lib; the deepmd pair style loads
+            # through the `plugin load` line the input generators emit.
+            self.lammps_bin = lammps_bin or os.environ.get(
+                "LAMMPS_BIN_DP", "/usr/local/bin/lmp-with-dp"
             )
-            self.lammps_bin = lammps_bin or "/usr/local/bin/lmp-with-dp"
             self._is_dp = True
             self._is_meam = False
         elif is_meam:
@@ -583,8 +596,11 @@ class LAMMPSRunner:
             self.lammps_bin = lammps_bin or getattr(self.settings, "LAMMPS_BIN", "lmp_serial")
             self._is_dp = False
             self._is_meam = False
-            _default_upload = Path(__file__).resolve().parents[3] / "uploads"  # repo root/uploads
-            self.potential_dir = potential_dir or os.environ.get("POTENTIAL_DIR", str(_default_upload))
+        # NFM-5281: potential_dir is common to every potential type — it
+        # previously lived only on the classical branch, leaving DP/MEAM/MTP
+        # runners without it (AttributeError in _resolve_pot_file).
+        _default_upload = Path(__file__).resolve().parents[3] / "uploads"  # repo root/uploads
+        self.potential_dir = potential_dir or os.environ.get("POTENTIAL_DIR", str(_default_upload))
         self.elements = potential_meta.get("elements", [])
         # Structure detection: explicit arg > meta.structure > meta.phase > meta.lammps_config.structure > "bcc"
         self.structure = (
