@@ -3,8 +3,10 @@
 The DP path was hard-disabled (``ValueError`` in ``LAMMPSRunner.__init__``)
 while the deepmd-plugin bind source was an empty husk (NFM-5271). The SRE
 lane repopulated and in-container verified the runtime set
-(``deepmd-plugin/MANIFEST.md``, 2026-10-03: deepmd-kit 3.2.0 + TF 2.18.1 +
-torch 2.10.0, linux/aarch64, dlopen-clean), so the runner must accept DP
+(deploy-host record ``deepmd-plugin/MANIFEST.md`` — the docker-compose bind
+source for /opt/deepmd/lib, not versioned in this repo — 2026-10-03:
+deepmd-kit 3.2.0 + TF 2.18.1 + torch 2.10.0, linux/aarch64, dlopen-clean),
+so the runner must accept DP
 potentials again — and the input generators must emit a loadable plugin
 line. Three latent defects shipped with the original DP code and are
 pinned here:
@@ -27,8 +29,12 @@ from unittest.mock import MagicMock, patch
 
 from autovc.runners.lammps_runner import (
     LAMMPSRunner,
+    _generate_basic_input,
     _generate_elastic_input,
     _generate_lattice_input,
+    _generate_strained_input,
+    _generate_surface_energy_input,
+    _generate_vacancy_input,
 )
 
 PLUGIN_LINE = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.so"
@@ -149,3 +155,83 @@ class TestElasticInputPluginLine:
             ["U"], "pair_style eam/fs", "pair_coeff * * U.eam.fs", structure="bcc"
         )
         assert "plugin load" not in script
+
+
+class TestRunnerPathGeneratorsPluginLine:
+    """Every generator run_property actually dispatches to must emit the
+    plugin load for DP — elastic_constants goes through _generate_basic_input
+    and _generate_strained_input (not _generate_elastic_input), vacancy and
+    surface_energy have their own generators. A missing plugin line kills
+    the run at `pair_style deepmd` ("unrecognized pair style")."""
+
+    def test_basic_input_plugin_line_precedes_pair_style(self):
+        script = _generate_basic_input(
+            ["Fe"], PAIR_STYLE, PAIR_COEFF, 3.0, "bcc", size=3, is_dp=True
+        )
+        lines = script.splitlines()
+        plugin_idx = lines.index(PLUGIN_LINE)
+        pair_idx = next(i for i, ln in enumerate(lines) if ln.startswith("pair_style"))
+        assert pair_idx == plugin_idx + 1
+
+    def test_strained_input_plugin_line_precedes_pair_style(self):
+        script = _generate_strained_input(
+            ["Fe"], PAIR_STYLE, PAIR_COEFF, 3.0, "bcc", size=3,
+            strain_x=0.001, is_dp=True
+        )
+        lines = script.splitlines()
+        plugin_idx = lines.index(PLUGIN_LINE)
+        pair_idx = next(i for i, ln in enumerate(lines) if ln.startswith("pair_style"))
+        assert pair_idx == plugin_idx + 1
+
+    def test_strained_shear_input_keeps_plugin_line(self):
+        script = _generate_strained_input(
+            ["Fe"], PAIR_STYLE, PAIR_COEFF, 3.0, "bcc", size=3,
+            shear_xy=0.001, is_dp=True
+        )
+        assert PLUGIN_LINE in script
+
+    def test_vacancy_input_accepts_is_dp_and_emits_plugin_line(self):
+        script = _generate_vacancy_input(
+            ["Fe"], PAIR_STYLE, PAIR_COEFF, 3.0, "bcc", size=3, is_dp=True
+        )
+        lines = script.splitlines()
+        plugin_idx = lines.index(PLUGIN_LINE)
+        pair_idx = next(i for i, ln in enumerate(lines) if ln.startswith("pair_style"))
+        assert pair_idx == plugin_idx + 1
+
+    def test_vacancy_input_without_is_dp_still_constructs(self):
+        script = _generate_vacancy_input(
+            ["U"], "pair_style eam/fs", "pair_coeff * * U.eam.fs", 3.4, "bcc"
+        )
+        assert "plugin load" not in script
+        assert "vacancy_formation_energy" in script
+
+    def test_surface_input_plugin_line_precedes_pair_style(self):
+        script = _generate_surface_energy_input(
+            ["Fe"], PAIR_STYLE, PAIR_COEFF, 3.0, "bcc", size=4, is_dp=True
+        )
+        lines = script.splitlines()
+        plugin_idx = lines.index(PLUGIN_LINE)
+        pair_idx = next(i for i, ln in enumerate(lines) if ln.startswith("pair_style"))
+        assert pair_idx == plugin_idx + 1
+
+    def test_classical_runner_path_inputs_have_no_plugin_line(self):
+        for script in (
+            _generate_basic_input(
+                ["U"], "pair_style eam/alloy", "pair_coeff * * U.eam.alloy U",
+                3.4, "bcc", size=3
+            ),
+            _generate_strained_input(
+                ["U"], "pair_style eam/alloy", "pair_coeff * * U.eam.alloy U",
+                3.4, "bcc", size=3, strain_x=0.001
+            ),
+            _generate_vacancy_input(
+                ["U"], "pair_style eam/alloy", "pair_coeff * * U.eam.alloy U",
+                3.4, "bcc"
+            ),
+            _generate_surface_energy_input(
+                ["U"], "pair_style eam/alloy", "pair_coeff * * U.eam.alloy U",
+                3.4, "bcc"
+            ),
+        ):
+            assert "plugin load" not in script

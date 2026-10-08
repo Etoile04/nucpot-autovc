@@ -3,12 +3,17 @@
 #
 # Debian trixie's `lammps` package (20250204+dfsg.1-2) ships WITHOUT the
 # PLUGIN package — `plugin load` fails with "Unknown command" (verified
-# in-container 2026-10-08) — so DP pair styles run on the vendored
-# PLUGIN-capable binary at /app/bin/lmp-plugin (rebuilt via
-# bin/build-lmp-plugin.sh). The staged runtime (deepmd-kit 3.2.0 +
-# TF 2.18.1 + torch 2.10.0, see deepmd-plugin/MANIFEST.md) is bind-mounted
-# at /opt/deepmd/lib by docker-compose.yml and is the only source of
+# in-container 2026-10-08) — so DP pair styles run on lmp-plugin, the
+# PLUGIN-capable front end the Dockerfile builds in its `lmp-builder`
+# stage from the pip `lammps` wheel ==2025.7.22.2.0
+# (stable_22Jul2025_update2, MPICH ABI) — the exact LAMMPS generation
+# deepmd-kit's CI builds the plugin against; a 4Feb2025 host fails on
+# Pair vtable drift and an OpenMPI host on MPI ABI (see the Dockerfile
+# lmp-builder notes). The staged runtime (deepmd-kit 3.2.0 + TF 2.18.1 +
+# torch 2.10.0, per the deploy-host record deepmd-plugin/MANIFEST.md) is bind-mounted at
+# /opt/deepmd/lib by docker-compose.yml and is the only source of
 # libdeepmd_*.so — put it on the loader path, then exec so PID/signal
 # semantics stay LAMMPS's own.
 export LD_LIBRARY_PATH="/opt/deepmd/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-exec /app/bin/lmp-plugin "$@"
+LMP_PLUGIN_BIN="${LMP_PLUGIN_BIN:-/usr/local/bin/lmp-plugin}"
+exec "$LMP_PLUGIN_BIN" "$@"

@@ -96,6 +96,21 @@ PROGRESS_MAP = {
 
 # ── LAMMPS input templates ─────────────────────────────────────────
 
+# NFM-5281: the staged plugin library (provenance recorded on the deploy
+# host in deepmd-plugin/MANIFEST.md — the docker-compose bind source for
+# /opt/deepmd/lib, not versioned in this repo). The
+# deepmd pair style resolves its symbols from the plugin, so every input
+# script that uses `pair_style deepmd` must load it first — one load per
+# script, before the first physics block. Fused templates get the
+# trailing-newline variant so the plugin command does not concatenate
+# with pair_style into a LAMMPS syntax error.
+DP_PLUGIN_LOAD_CMD = "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.so"
+
+
+def _plugin_load_line(is_dp: bool) -> str:
+    return DP_PLUGIN_LOAD_CMD + "\n" if is_dp else ""
+
+
 def _pair_style_config(lammps_config: dict | None, potential_type: str | None) -> tuple[str, str]:
     """Return (pair_style line, pair_coeff line) based on config/type."""
     cfg = lammps_config or {}
@@ -135,12 +150,7 @@ def _generate_lattice_input(
         lattice_line = f"lattice {lammps_struct} {guess_a}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
-    # NFM-5281: .so (staged file), with a trailing newline — the template
-    # fuses {plugin_load}{pair_style} on one line, so without the newline
-    # the two LAMMPS commands concatenate into a syntax error.
-    plugin_load = (
-        "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.so\n" if is_dp else ""
-    )
+    plugin_load = _plugin_load_line(is_dp)
     n_types = len(elements)
     MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
               "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
@@ -229,7 +239,8 @@ _MASS = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
          "In": 114.82, "Se": 78.96, "Si": 28.09, "C": 12.011}
 
 
-def _generate_basic_input(elements, pair_style, pair_coeff, guess_a, structure, size=3):
+def _generate_basic_input(elements, pair_style, pair_coeff, guess_a, structure,
+                          size=3, is_dp=False):
     """Generate basic LAMMPS input for energy minimization (no strain)."""
     lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
     lattice_line = f"lattice {lammps_struct} {guess_a}"
@@ -242,8 +253,11 @@ def _generate_basic_input(elements, pair_style, pair_coeff, guess_a, structure, 
     ]
     for i, e in enumerate(elements[:max(n_types, 1)], 1):
         lines.append(f"mass {i} {_MASS.get(e, 100.0)}")
+    lines.append("create_atoms 1 box")
+    if is_dp:
+        lines.append(DP_PLUGIN_LOAD_CMD)
     lines.extend([
-        "create_atoms 1 box", pair_style, pair_coeff,
+        pair_style, pair_coeff,
         "neigh_modify one 5000", "min_style cg",
         "minimize 1e-12 1e-12 5000 50000",
     ])
@@ -251,7 +265,8 @@ def _generate_basic_input(elements, pair_style, pair_coeff, guess_a, structure, 
 
 
 def _generate_strained_input(elements, pair_style, pair_coeff, guess_a, structure,
-                             size=3, strain_x=0, strain_y=0, shear_xy=0):
+                             size=3, strain_x=0, strain_y=0, shear_xy=0,
+                             is_dp=False):
     """Generate LAMMPS input with applied strain."""
     lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
     lattice_line = f"lattice {lammps_struct} {guess_a}"
@@ -268,8 +283,11 @@ def _generate_strained_input(elements, pair_style, pair_coeff, guess_a, structur
     ]
     for i, e in enumerate(elements[:max(n_types, 1)], 1):
         lines.append(f"mass {i} {_MASS.get(e, 100.0)}")
+    lines.append("create_atoms 1 box")
+    if is_dp:
+        lines.append(DP_PLUGIN_LOAD_CMD)
     lines.extend([
-        "create_atoms 1 box", pair_style, pair_coeff,
+        pair_style, pair_coeff,
         "neigh_modify one 5000", "min_style cg",
         "minimize 1e-12 1e-12 5000 50000",
     ])
@@ -307,12 +325,9 @@ def _generate_elastic_input(
         lattice_line = f"lattice {lammps_struct} {guess_a}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
-    # NFM-5281: .so (staged file); hoisted out of the non-hcp branch so
-    # hcp + DP does not silently skip plugin loading; trailing newline
-    # because the template fuses {plugin_load}{pair_style} on one line.
-    plugin_load = (
-        "plugin load /opt/deepmd/lib/libdeepmd_lmpplugin.so\n" if is_dp else ""
-    )
+    # NFM-5281: hoisted out of the non-hcp branch so hcp + DP does not
+    # silently skip plugin loading.
+    plugin_load = _plugin_load_line(is_dp)
 
     MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
               "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
@@ -395,6 +410,7 @@ def _generate_vacancy_input(
     guess_a: float = 3.4,
     structure: str = "bcc",
     size: int = 3,
+    is_dp: bool = False,
 ) -> str:
     """Generate LAMMPS input for vacancy formation energy."""
     element = elements[0] if elements else "U"
@@ -403,6 +419,7 @@ def _generate_vacancy_input(
         lattice_line = f"lattice {lammps_struct} {guess_a}"
     else:
         lattice_line = f"lattice {lammps_struct} {guess_a}"
+    plugin_load = _plugin_load_line(is_dp)
     MASSES = {"U": 238.03, "Mo": 95.95, "Zr": 91.22, "Nb": 92.91, "Fe": 55.85,
               "Cr": 52.00, "W": 183.84, "Ta": 180.95, "V": 50.94, "Ti": 47.87,
               "Ni": 58.69, "Cu": 63.55, "Al": 26.98, "O": 16.00, "H": 1.008,
@@ -428,7 +445,7 @@ atom_style atomic
 region box block 0 {size} 0 {size} 0 {size}
 {box_block}
 
-{pair_style}
+{plugin_load}{pair_style}
 {pair_coeff}
 
 # Perfect crystal energy
@@ -472,7 +489,8 @@ def _generate_surface_energy_input(
     """
     element = elements[0] if elements else "U"
     lammps_struct = LAMMPS_LATTICE_MAP.get(structure, structure.lower())
-    
+    plugin_load = _plugin_load_line(is_dp)
+
     if lammps_struct == "hcp":
         c_param = guess_a * HCP_IDEAL_CA
         lattice_line = f"lattice {lammps_struct} {guess_a}"
@@ -505,7 +523,7 @@ atom_style atomic
 region box block 0 {size} 0 {size} 0 {size*2}
 {box_block}
 
-{pair_style}
+{plugin_load}{pair_style}
 {pair_coeff}
 
 # Bulk energy reference
@@ -574,9 +592,11 @@ class LAMMPSRunner:
         is_mtp = "mtp" in ptype_init
         if is_dp:
             # NFM-5281: re-enabled. The deepmd-plugin bind source is
-            # repopulated and in-container verified (deepmd-plugin/MANIFEST.md,
-            # 2026-10-03: deepmd-kit 3.2.0 + TF 2.18.1 + torch 2.10.0,
-            # linux/aarch64). lmp-with-dp wraps the host lmp with
+            # repopulated and in-container verified (deploy-host record
+            # deepmd-plugin/MANIFEST.md, 2026-10-03: deepmd-kit 3.2.0 +
+            # TF 2.18.1 + torch 2.10.0, linux/aarch64 — that manifest lives
+            # on the deploy host with the staged .so files, not in this
+            # repo). lmp-with-dp wraps the host lmp with
             # LD_LIBRARY_PATH=/opt/deepmd/lib; the deepmd pair style loads
             # through the `plugin load` line the input generators emit.
             self.lammps_bin = lammps_bin or os.environ.get(
@@ -834,7 +854,8 @@ class LAMMPSRunner:
 
         if prop_name in ("lattice_constant", "cohesive_energy"):
             script = _generate_lattice_input(
-                self.elements, pair_style, pair_coeff, guess, self.structure, is_dp=getattr(self, '_is_dp', False)
+                self.elements, pair_style, pair_coeff, guess, self.structure,
+                is_dp=self._is_dp
             )
             output = await self._run_lammps(script)
             parsed = _parse_lammps_output(output)
@@ -874,7 +895,8 @@ class LAMMPSRunner:
             conv = 160.2177
 
             ref_script = _generate_basic_input(
-                self.elements, pair_style, pair_coeff, guess, self.structure, size
+                self.elements, pair_style, pair_coeff, guess, self.structure, size,
+                is_dp=self._is_dp
             )
             ref_script += "variable e equal pe" + chr(10) + "variable v equal vol" + chr(10) + "run 0" + chr(10) + 'print "RESULT e ${e}"' + chr(10) + 'print "RESULT v ${v}"' + chr(10)
             ref_out = await self._run_lammps(ref_script)
@@ -885,7 +907,8 @@ class LAMMPSRunner:
             async def _run_strain(strain_x=0, strain_y=0, shear_xy=0):
                 script = _generate_strained_input(
                     self.elements, pair_style, pair_coeff, guess, self.structure, size,
-                    strain_x=strain_x, strain_y=strain_y, shear_xy=shear_xy
+                    strain_x=strain_x, strain_y=strain_y, shear_xy=shear_xy,
+                    is_dp=self._is_dp
                 )
                 out = await self._run_lammps(script)
                 p = _parse_lammps_output(out)
@@ -945,7 +968,8 @@ class LAMMPSRunner:
 
         elif prop_name == "vacancy_formation_energy":
             script = _generate_vacancy_input(
-                self.elements, pair_style, pair_coeff, guess, self.structure, size=3, is_dp=getattr(self, '_is_dp', False)
+                self.elements, pair_style, pair_coeff, guess, self.structure, size=3,
+                is_dp=self._is_dp
             )
             output = await self._run_lammps(script)
             parsed = _parse_lammps_output(output)
@@ -963,7 +987,8 @@ class LAMMPSRunner:
 
         elif prop_name == "surface_energy":
             script = _generate_surface_energy_input(
-                self.elements, pair_style, pair_coeff, guess, self.structure, size=4
+                self.elements, pair_style, pair_coeff, guess, self.structure, size=4,
+                is_dp=self._is_dp
             )
             output = await self._run_lammps(script)
             parsed = _parse_lammps_output(output)

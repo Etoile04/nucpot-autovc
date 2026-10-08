@@ -14,9 +14,10 @@ RUN cd kim-api && mkdir build && cd build &&     cmake .. -DCMAKE_INSTALL_PREFIX
 
 # Install kimpy (needs pkg-config to find kim-api)
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
-# GFW workaround: pypi.org direct is unreliable from the docker VM; use TUNA
-# pypi mirror for all pip installs.
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && pip config set global.retries 8 && pip config set global.timeout 60
+# GFW workaround: pypi.org direct is unreliable from the docker VM; use the
+# aliyun pypi mirror (TUNA rate-limits this network — "access denied" on
+# /simple/kimpy/, 2026-10-08).
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && pip config set global.retries 8 && pip config set global.timeout 60
 RUN pip install --no-cache-dir kimpy
 
 # Install project deps
@@ -24,10 +25,46 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
+# ── NFM-5281: PLUGIN-capable LAMMPS (linux/aarch64) ─────────────────────
+# Debian trixie's `lammps` package (20250204) is built WITHOUT the PLUGIN
+# package — `plugin load` fails with "Unknown command" (verified
+# in-container 2026-10-08) — and a self-built 4Feb2025 can't host the
+# deepmd plugin either: the plugin .so (deepmd-kit pip wheel) targets
+# LAMMPS stable_22Jul2025_update2 with the MPICH ABI. Any other pairing
+# fails two ways, both verified in-container 2026-10-08:
+#   * vtable drift — on a 4Feb2025 host, pair_coeff dispatched into
+#     settings() ("Failed to open file: *" / "...: 1");
+#   * MPI ABI — under OpenMPI, MPI handles are pointers, so every
+#     MPI-typed interface symbol mangles differently ("undefined symbol:
+#     _ZN9LAMMPS_NS6Grid3d12forward_commEiPviiiS1_S1_i").
+# deepmd-kit's own pyproject pins this exact wheel (DP_LAMMPS_VERSION =
+# "stable_22Jul2025_update2", test dep lammps[mpi]~=2025.7.22.2.0), so we
+# ship that library and stay on the CI-tested pairing. The wheel carries
+# liblammps.so (MPICH-linked, PKG_PLUGIN-enabled, full symbol export) but
+# no lmp executable — bin/lmp-plugin-launcher.c is the argv-compatible
+# front end. Wheel libs land at /opt/lammps (+ /opt/lammps.libs per the
+# auditwheel $ORIGIN/../lammps.libs rpath); the runtime stage adds the
+# MPICH runtime (libmpi.so.12) the library NEEDs.
+FROM python:3.12-slim AS lmp-builder
+# GFW workaround: apt from the USTC mirror like the other stages (deb.debian.org
+# crawls from this network), pip from aliyun (TUNA rate-limits, 2026-10-08).
+RUN sed -i "s|deb.debian.org|mirrors.ustc.edu.cn|g" /etc/apt/sources.list.d/debian.sources
+RUN pip install --no-cache-dir --index-url https://mirrors.aliyun.com/pypi/simple/ \
+      lammps==2025.7.22.2.0
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev libmpich-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY bin/lmp-plugin-launcher.c /tmp/launcher.c
+RUN SITE=$(python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])") \
+    && gcc -O2 -o /usr/local/bin/lmp-plugin /tmp/launcher.c \
+         -L"$SITE/lammps" -llammps -Wl,-rpath,/opt/lammps \
+    && mkdir -p /opt/lammps /opt/lammps.libs \
+    && cp -P "$SITE"/lammps/liblammps.so* /opt/lammps/ \
+    && cp -rP "$SITE"/lammps.libs/. /opt/lammps.libs/
+
 FROM python:3.12-slim AS runtime
 
 # GFW workaround (runtime stage too — pip config from builder doesn't persist)
-ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
     PIP_RETRIES=8 \
     PIP_TIMEOUT=60
 
@@ -56,20 +93,20 @@ RUN kim-api-collections-management install user EAM_Dynamo_Mendelev_2007_Zr__MO_
 # of the vendored x86-64 bin/lmp-full which lacks MANYBODY (eam/fs) and needs
 # qemu emulation + amd64 multilib. apt lammps 2025.02 covers all pair styles
 # the verification templates use.
-RUN apt-get update && apt-get install -y --no-install-recommends         lammps lammps-data     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends         lammps lammps-data libmpich12     && rm -rf /var/lib/apt/lists/*
 
 # Create lmp_serial symlink at build time
 RUN ln -sf /usr/bin/lmp /usr/local/bin/lmp_serial
 
-# NFM-5281: DeepMD enablement. Debian's lammps (20250204) lacks the PLUGIN
-# command ("Unknown command: plugin load", verified in-container 2026-10-08),
-# so DP pair styles run on the vendored PLUGIN-capable build — bin/lmp-plugin,
-# rebuilt via bin/build-lmp-plugin.sh (tag patch_4Feb2025 + PKG_PLUGIN/KSPACE/
-# MANYBODY/MOLECULE). bin/lmp-with-dp wraps it with the staged runtime on
-# LD_LIBRARY_PATH (/opt/deepmd/lib, bind-mounted by docker-compose.yml);
-# LAMMPSRunner's DP default is /usr/local/bin/lmp-with-dp.
-RUN ln -sf /app/bin/lmp-with-dp /usr/local/bin/lmp-with-dp \
- && ln -sf /app/bin/lmp-plugin /usr/local/bin/lmp-plugin
+# NFM-5281: PLUGIN-capable LAMMPS from the builder stage + the DP wrapper.
+# bin/lmp-with-dp (already COPYed with the tree to /app/bin/) puts the
+# staged runtime — bind-mounted at /opt/deepmd/lib by docker-compose.yml —
+# on LD_LIBRARY_PATH, then execs lmp-plugin. LAMMPSRunner's DP default is
+# /usr/local/bin/lmp-with-dp.
+COPY --from=lmp-builder /usr/local/bin/lmp-plugin /usr/local/bin/lmp-plugin
+COPY --from=lmp-builder /opt/lammps/ /opt/lammps/
+COPY --from=lmp-builder /opt/lammps.libs/ /opt/lammps.libs/
+RUN ln -sf /app/bin/lmp-with-dp /usr/local/bin/lmp-with-dp
 
 # Ensure uploads dir exists
 RUN mkdir -p /app/uploads

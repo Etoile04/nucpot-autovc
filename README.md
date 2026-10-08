@@ -200,6 +200,7 @@ Environment variables (set in `.env` or Docker environment):
 | `SUPABASE_PUBLISHABLE_KEY` | — | Supabase publishable key (sb_publishable_..., safe for client-side) |
 | `SUPABASE_SECRET_KEY` | — | Supabase secret key (sb_secret_..., backend only, bypasses RLS) |
 | `LAMMPS_BIN` | `lmp_serial` | Path to LAMMPS executable |
+| `LAMMPS_BIN_DP` | `/usr/local/bin/lmp-with-dp` | LAMMPS executable for DeepMD potentials (plugin-capable build; requires the deepmd-plugin runtime bind-mounted at `/opt/deepmd/lib`) |
 
 ---
 
