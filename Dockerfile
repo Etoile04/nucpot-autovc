@@ -61,6 +61,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends         lammps 
 # Create lmp_serial symlink at build time
 RUN ln -sf /usr/bin/lmp /usr/local/bin/lmp_serial
 
+# NFM-5281: DeepMD enablement. Debian's lammps (20250204) lacks the PLUGIN
+# command ("Unknown command: plugin load", verified in-container 2026-10-08),
+# so DP pair styles run on the vendored PLUGIN-capable build — bin/lmp-plugin,
+# rebuilt via bin/build-lmp-plugin.sh (tag patch_4Feb2025 + PKG_PLUGIN/KSPACE/
+# MANYBODY/MOLECULE). bin/lmp-with-dp wraps it with the staged runtime on
+# LD_LIBRARY_PATH (/opt/deepmd/lib, bind-mounted by docker-compose.yml);
+# LAMMPSRunner's DP default is /usr/local/bin/lmp-with-dp.
+RUN ln -sf /app/bin/lmp-with-dp /usr/local/bin/lmp-with-dp \
+ && ln -sf /app/bin/lmp-plugin /usr/local/bin/lmp-plugin
+
 # Ensure uploads dir exists
 RUN mkdir -p /app/uploads
 

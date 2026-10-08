@@ -1,0 +1,14 @@
+#!/bin/sh
+# NFM-5281 — DeepMD-capable LAMMPS entry point (linux/aarch64).
+#
+# Debian trixie's `lammps` package (20250204+dfsg.1-2) ships WITHOUT the
+# PLUGIN package — `plugin load` fails with "Unknown command" (verified
+# in-container 2026-10-08) — so DP pair styles run on the vendored
+# PLUGIN-capable binary at /app/bin/lmp-plugin (rebuilt via
+# bin/build-lmp-plugin.sh). The staged runtime (deepmd-kit 3.2.0 +
+# TF 2.18.1 + torch 2.10.0, see deepmd-plugin/MANIFEST.md) is bind-mounted
+# at /opt/deepmd/lib by docker-compose.yml and is the only source of
+# libdeepmd_*.so — put it on the loader path, then exec so PID/signal
+# semantics stay LAMMPS's own.
+export LD_LIBRARY_PATH="/opt/deepmd/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+exec /app/bin/lmp-plugin "$@"
