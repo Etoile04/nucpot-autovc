@@ -11,3 +11,6 @@ docs/
 tests/
 kim.log
 kim-tools.log
+
+# NFM-5281 hygiene: tracked env backup must not ship inside the image
+.env.bak.local
